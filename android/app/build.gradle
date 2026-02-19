@@ -1,0 +1,57 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.trtcdemo'
+    compileSdk 33
+
+    defaultConfig {
+        applicationId "com.trtcdemo"
+        minSdk 21
+        targetSdk 33
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+
+    buildFeatures {
+        viewBinding true
+    }
+}
+
+dependencies {
+    // TRTC SDK (includes TRTCCloud, TXLivePlayer, TXDeviceManager, etc.)
+    implementation 'com.tencent.liteav:LiteAVSDK_TRTC:latest.release'
+
+    // Tencent Cloud Chat (IM) SDK — used for C2C custom message signaling
+    implementation 'com.tencent.imsdk:imsdk-plus:latest.release'
+
+    // Kotlin coroutines
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+
+    // Gson for JSON parsing
+    implementation 'com.google.code.gson:gson:2.10.1'
+
+    // AndroidX
+    implementation 'androidx.core:core-ktx:1.10.1'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.9.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.2'
+}

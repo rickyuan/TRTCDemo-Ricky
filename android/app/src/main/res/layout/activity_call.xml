@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <!-- ── Remote video (full screen) ─────────────────────────────────────── -->
+    <com.tencent.rtmp.ui.TXCloudVideoView
+        android:id="@+id/viewRemoteVideo"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
+
+    <!-- Remote placeholder -->
+    <LinearLayout
+        android:id="@+id/tvRemotePlaceholder"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:background="#111111">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="📞"
+            android:textSize="56sp"
+            android:layout_marginBottom="16dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="等待对方接听..."
+            android:textColor="#8A8FA8"
+            android:textSize="16sp" />
+
+    </LinearLayout>
+
+    <!-- ── Local video (Picture-in-Picture) ───────────────────────────────── -->
+    <FrameLayout
+        android:layout_width="110dp"
+        android:layout_height="165dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="16dp"
+        android:background="#1A1A1A"
+        android:elevation="4dp">
+
+        <com.tencent.rtmp.ui.TXCloudVideoView
+            android:id="@+id/viewLocalVideo"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+    </FrameLayout>
+
+    <!-- ── Status bar (top-left) ──────────────────────────────────────────── -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_gravity="top|start"
+        android:layout_margin="16dp">
+
+        <TextView
+            android:id="@+id/tvTimer"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="00:00"
+            android:textColor="#FFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tvUserId"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#CCCCCC"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/tvRoomId"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#AAAAAA"
+            android:textSize="11sp" />
+
+        <TextView
+            android:id="@+id/tvCallStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="连接中..."
+            android:textColor="#8A8FA8"
+            android:textSize="11sp" />
+
+    </LinearLayout>
+
+    <!-- ── Controls ────────────────────────────────────────────────────────── -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:orientation="vertical"
+        android:layout_marginBottom="32dp"
+        android:paddingHorizontal="16dp">
+
+        <!-- Row 1: Resolution picker -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="分辨率: "
+                android:textColor="#CCCCCC"
+                android:textSize="13sp" />
+
+            <Spinner
+                android:id="@+id/spinnerResolution"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:backgroundTint="#444444" />
+
+        </LinearLayout>
+
+        <!-- Row 2: Control buttons -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:background="#66000000"
+            android:padding="12dp">
+
+            <Button
+                android:id="@+id/btnToggleMic"
+                android:layout_width="0dp"
+                android:layout_height="56dp"
+                android:layout_weight="1"
+                android:layout_margin="6dp"
+                android:text="静音"
+                android:textSize="12sp"
+                android:backgroundTint="#333333"
+                android:textColor="#FFFFFF"
+                android:stateListAnimator="@null" />
+
+            <Button
+                android:id="@+id/btnToggleCam"
+                android:layout_width="0dp"
+                android:layout_height="56dp"
+                android:layout_weight="1"
+                android:layout_margin="6dp"
+                android:text="关摄像头"
+                android:textSize="12sp"
+                android:backgroundTint="#333333"
+                android:textColor="#FFFFFF"
+                android:stateListAnimator="@null" />
+
+            <Button
+                android:id="@+id/btnHangup"
+                android:layout_width="0dp"
+                android:layout_height="56dp"
+                android:layout_weight="1"
+                android:layout_margin="6dp"
+                android:text="挂断"
+                android:textSize="12sp"
+                android:backgroundTint="#E5363B"
+                android:textColor="#FFFFFF"
+                android:stateListAnimator="@null" />
+
+            <Button
+                android:id="@+id/btnSwitchCam"
+                android:layout_width="0dp"
+                android:layout_height="56dp"
+                android:layout_weight="1"
+                android:layout_margin="6dp"
+                android:text="后置"
+                android:textSize="12sp"
+                android:backgroundTint="#333333"
+                android:textColor="#FFFFFF"
+                android:stateListAnimator="@null" />
+
+            <Button
+                android:id="@+id/btnScreenShare"
+                android:layout_width="0dp"
+                android:layout_height="56dp"
+                android:layout_weight="1"
+                android:layout_margin="6dp"
+                android:text="共享屏幕"
+                android:textSize="12sp"
+                android:backgroundTint="#1A5276"
+                android:textColor="#FFFFFF"
+                android:stateListAnimator="@null" />
+
+        </LinearLayout>
+    </LinearLayout>
+
+</FrameLayout>

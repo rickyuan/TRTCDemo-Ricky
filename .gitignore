@@ -1,0 +1,15 @@
+# macOS
+.DS_Store
+
+# Android build outputs & local config
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/.gradle/
+android/**/*.iml
+android/captures/
+
+# Node.js
+server/node_modules/
+server/.env
