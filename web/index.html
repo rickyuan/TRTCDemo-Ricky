@@ -1,48 +1,69 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TRTC 视频通话 - Web</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#0f1117" />
+  <title>TRTC Video Call</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
+  <!-- ── Language Toggle ──────────────────────────────────────────────── -->
+  <button id="btn-lang" class="lang-btn">中文</button>
+
   <!-- ── Login Screen ─────────────────────────────────────────────────── -->
   <div id="login-screen" class="screen">
-    <div class="card">
-      <h1>TRTC 视频通话</h1>
-      <p class="subtitle">Web 端</p>
+    <div class="login-wrap">
+      <div class="app-logo">📹</div>
+      <h1 id="app-title" class="app-title">TRTC Video Call</h1>
+      <p id="app-subtitle" class="app-subtitle">Enter your User ID to start</p>
+
       <div class="form-group">
-        <label for="input-userid">用户 ID</label>
-        <input id="input-userid" type="text" placeholder="例如: web_user_001" value="web_user_001" />
+        <label for="input-userid">User ID</label>
+        <input id="input-userid" type="text" placeholder="e.g. web_user_001" value="web_user_001"
+               autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" />
       </div>
-      <button id="btn-login" class="btn btn-primary">登录 &amp; 等待来电</button>
+
+      <button id="btn-login" class="btn btn-primary">Login &amp; Wait for Call</button>
       <div id="login-status" class="status-text"></div>
     </div>
   </div>
 
   <!-- ── Incoming Call Screen ──────────────────────────────────────────── -->
   <div id="incoming-screen" class="screen hidden">
-    <div class="card">
-      <div class="call-icon">📞</div>
-      <h2>来电</h2>
-      <p id="caller-name" class="caller-name">Android 用户</p>
-      <p class="call-type">视频通话邀请</p>
+    <div class="incoming-wrap">
+      <div class="incoming-avatar">
+        <span class="avatar-ring"></span>
+        <span class="avatar-ring ring2"></span>
+        <span class="avatar-icon">👤</span>
+      </div>
+      <p id="caller-name" class="caller-name">Android User</p>
+      <p class="call-type">Incoming video call</p>
+
       <div class="call-actions">
-        <button id="btn-decline" class="btn btn-danger">挂断</button>
-        <button id="btn-accept"  class="btn btn-success">接听</button>
+        <div class="action-item">
+          <button id="btn-decline" class="action-btn action-btn-danger">📵</button>
+          <span class="action-label">Decline</span>
+        </div>
+        <div class="action-item">
+          <button id="btn-accept" class="action-btn action-btn-success">📞</button>
+          <span class="action-label">Accept</span>
+        </div>
       </div>
     </div>
   </div>
 
   <!-- ── Call Screen ───────────────────────────────────────────────────── -->
   <div id="call-screen" class="screen hidden">
-    <!-- Remote video (large) -->
+    <!-- Remote video (full screen) -->
     <div id="remote-video-container">
       <div id="remote-video" class="video-view"></div>
       <div id="remote-placeholder" class="video-placeholder">
-        <span>等待对方视频...</span>
+        <span class="placeholder-icon">📷</span>
+        <span>Waiting for remote video...</span>
       </div>
     </div>
 
@@ -51,33 +72,44 @@
       <div id="local-video" class="video-view"></div>
     </div>
 
-    <!-- Status bar -->
+    <!-- Top status bar -->
     <div id="call-status-bar">
       <span id="call-timer">00:00</span>
-      <span id="call-status-text">连接中...</span>
+      <span id="call-status-text">Connecting...</span>
+    </div>
+
+    <!-- Subtitle overlay -->
+    <div id="subtitle-overlay" class="subtitle-overlay hidden">
+      <div id="subtitle-original" class="subtitle-original"></div>
+      <div id="subtitle-translation" class="subtitle-translation hidden"></div>
     </div>
 
     <!-- Controls -->
     <div id="controls">
-      <button id="btn-toggle-mic"  class="ctrl-btn" title="麦克风">
-        <span class="icon">🎤</span>
-        <span class="label">麦克风</span>
-      </button>
-      <button id="btn-toggle-cam"  class="ctrl-btn" title="摄像头">
-        <span class="icon">📷</span>
-        <span class="label">摄像头</span>
-      </button>
-      <button id="btn-hangup"      class="ctrl-btn ctrl-btn-danger" title="挂断">
-        <span class="icon">📵</span>
-        <span class="label">挂断</span>
-      </button>
+      <div class="ctrl-item">
+        <button id="btn-toggle-mic" class="ctrl-btn" title="Mute">
+          <span class="icon">🎤</span>
+        </button>
+        <span class="ctrl-label">Mute</span>
+      </div>
+      <div class="ctrl-item">
+        <button id="btn-toggle-cam" class="ctrl-btn" title="Camera">
+          <span class="icon">📷</span>
+        </button>
+        <span class="ctrl-label">Camera</span>
+      </div>
+      <div class="ctrl-item">
+        <button id="btn-hangup" class="ctrl-btn ctrl-btn-danger" title="Hang Up">
+          <span class="icon">📵</span>
+        </button>
+        <span class="ctrl-label">Hang Up</span>
+      </div>
     </div>
   </div>
 
   <!-- ── SDKs (CDN) ──────────────────────────────────────────────────── -->
   <script src="https://www.unpkg.com/trtc-sdk-v5@latest/trtc.js"></script>
   <script src="https://www.unpkg.com/@tencentcloud/chat@latest/index.js"></script>
-  <script src="https://www.unpkg.com/pako@2.1.0/dist/pako.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

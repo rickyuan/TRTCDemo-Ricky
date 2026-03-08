@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- MainActivity -->
+    <string name="title_main">TRTC 视频通话</string>
+    <string name="subtitle_main">Android 端</string>
+    <string name="label_user_id">用户 ID</string>
+    <string name="hint_user_id">例如: android_user_001</string>
+    <string name="label_remote_id">对方用户 ID</string>
+    <string name="hint_remote_id">例如: web_user_001</string>
+    <string name="btn_start_call">发起视频通话</string>
+    <string name="btn_language">EN</string>
+
+    <!-- Permissions -->
+    <string name="permission_required">需要摄像头和麦克风权限才能进行通话</string>
+
+    <!-- Input errors -->
+    <string name="error_enter_user_id">请输入用户 ID</string>
+    <string name="error_enter_remote_id">请输入对方用户 ID</string>
+    <string name="error_generic">错误: %1$s</string>
+    <string name="error_usersig_failed">从服务器获取 UserSig 失败，请检查服务器连接。</string>
+
+    <!-- CallActivity — status -->
+    <string name="status_connecting">连接中…</string>
+    <string name="status_waiting">等待对方接听…</string>
+    <string name="status_waiting_answer">已连接，等待对方接听…</string>
+    <string name="status_in_call">通话中</string>
+    <string name="status_connected">已连接</string>
+    <string name="status_screen_sharing">屏幕共享中</string>
+    <string name="room_label">房间: %1$d</string>
+
+    <!-- CallActivity — resolution picker -->
+    <string name="label_resolution">分辨率: </string>
+
+    <!-- CallActivity — button labels -->
+    <string name="btn_mute">静音</string>
+    <string name="btn_unmute">开麦</string>
+    <string name="btn_cam_off">关摄像头</string>
+    <string name="btn_cam_on">开摄像头</string>
+    <string name="btn_hang_up">挂断</string>
+    <string name="btn_switch_rear">后置</string>
+    <string name="btn_switch_front">前置</string>
+    <string name="btn_share_screen">共享屏幕</string>
+    <string name="btn_stop_share">停止共享</string>
+
+    <!-- CallActivity — toasts -->
+    <string name="toast_entered_room">已进入房间 %1$d</string>
+    <string name="toast_failed_enter_room">进入房间失败，错误码: %1$d</string>
+    <string name="toast_user_joined">%1$s 已加入</string>
+    <string name="toast_user_left">%1$s 已离开</string>
+    <string name="toast_trtc_error">TRTC 错误 %1$d: %2$s</string>
+    <string name="toast_screen_share_started">屏幕共享已开始 — 切换到其他应用以共享内容</string>
+    <string name="toast_screen_share_stopped">屏幕共享已停止 (reason=%1$d)</string>
+    <string name="toast_sig_disconnected">信令断开: %1$s</string>
+    <string name="toast_accepted">%1$s 已接听</string>
+    <string name="toast_declined">%1$s 已拒绝</string>
+    <string name="toast_hung_up">%1$s 已挂断</string>
+    <string name="toast_sig_error">信令错误: %1$s</string>
+    <string name="toast_overlay_permission">请授予"显示在其他应用上方"权限以开启屏幕共享</string>
+
+    <!-- Signaling errors -->
+    <string name="chat_connection_failed">Chat 连接失败: %1$d %2$s</string>
+    <string name="chat_kicked">被踢下线</string>
+    <string name="usersig_expired">UserSig 已过期</string>
+    <string name="chat_login_failed">Chat 登录失败: %1$d %2$s</string>
+    <string name="send_failed">发送失败: %1$d %2$s</string>
+
+    <!-- Screen share notification -->
+    <string name="notif_channel_name">屏幕共享</string>
+    <string name="notif_channel_desc">TRTC 屏幕共享正在运行</string>
+    <string name="notif_title">屏幕共享中</string>
+    <string name="notif_text">TRTC 正在共享您的屏幕</string>
+</resources>

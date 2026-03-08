@@ -4,14 +4,20 @@ package com.trtcdemo
 object Config {
     /**
      * TRTC / Chat SDKAppId from the console.
+     * This is a public identifier, safe to include in the client.
      */
-    const val SDK_APP_ID: Int = 0 // TODO: Replace with your SDKAppID from https://console.trtc.io
+    const val SDK_APP_ID: Int = 20026228
 
     /**
-     * SecretKey for local UserSig generation (demo/testing only).
-     * In production, generate UserSig on your server.
+     * Backend server base URL.
+     * All sensitive operations (UserSig generation, AI transcription API calls)
+     * are proxied through this server — no secrets are stored in the client.
+     *
+     * For local development: use your machine's LAN IP so the Android device/emulator
+     * can reach the server (e.g. "http://192.168.1.100:3000").
+     * For production: replace with your deployed server URL.
      */
-    const val SECRET_KEY: String = "" // TODO: Replace with your SecretKey
+    const val SERVER_URL: String = "http://192.168.1.12:3000"  // LAN IP — accessible from real device
 
     /**
      * Default android user ID (can be changed in the UI).

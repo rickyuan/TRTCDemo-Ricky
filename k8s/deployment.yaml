@@ -1,0 +1,180 @@
+# Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: trtc-demo
+
+---
+# ─── Server Deployment ────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trtc-server
+  namespace: trtc-demo
+  labels:
+    app: trtc-server
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: trtc-server
+  template:
+    metadata:
+      labels:
+        app: trtc-server
+    spec:
+      containers:
+        - name: trtc-server
+          # Replace with your actual TKE image registry path
+          # e.g. ccr.ccs.tencentyun.com/<namespace>/trtc-server:latest
+          image: ccr.ccs.tencentyun.com/YOUR_NAMESPACE/trtc-server:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+          env:
+            - name: PORT
+              value: "3000"
+            - name: ALLOWED_ORIGINS
+              # Replace with your actual web domain after CLB/Ingress is set up
+              value: "https://YOUR_WEB_DOMAIN"
+            - name: SDK_APP_ID
+              valueFrom:
+                secretKeyRef:
+                  name: trtc-server-secret
+                  key: SDK_APP_ID
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: trtc-server-secret
+                  key: SECRET_KEY
+            - name: CLOUD_SECRET_ID
+              valueFrom:
+                secretKeyRef:
+                  name: trtc-server-secret
+                  key: CLOUD_SECRET_ID
+            - name: CLOUD_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: trtc-server-secret
+                  key: CLOUD_SECRET_KEY
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+
+---
+# ─── Server Service (ClusterIP — accessed internally by web or via Ingress) ──
+apiVersion: v1
+kind: Service
+metadata:
+  name: trtc-server-svc
+  namespace: trtc-demo
+spec:
+  selector:
+    app: trtc-server
+  ports:
+    - port: 3000
+      targetPort: 3000
+  type: ClusterIP
+
+---
+# ─── Web Deployment ───────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trtc-web
+  namespace: trtc-demo
+  labels:
+    app: trtc-web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: trtc-web
+  template:
+    metadata:
+      labels:
+        app: trtc-web
+    spec:
+      containers:
+        - name: trtc-web
+          # Replace with your actual TKE image registry path
+          image: ccr.ccs.tencentyun.com/YOUR_NAMESPACE/trtc-web:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+          livenessProbe:
+            httpGet:
+              path: /index.html
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /index.html
+              port: 80
+            initialDelaySeconds: 3
+            periodSeconds: 10
+
+---
+# ─── Web Service (LoadBalancer — TKE will provision a CLB automatically) ─────
+apiVersion: v1
+kind: Service
+metadata:
+  name: trtc-web-svc
+  namespace: trtc-demo
+  annotations:
+    # TKE CLB annotations — adjust as needed
+    service.kubernetes.io/qcloud-loadbalancer-internet-charge-type: "TRAFFIC_POSTPAID_BY_HOUR"
+    service.kubernetes.io/qcloud-loadbalancer-internet-max-bandwidth-out: "10"
+spec:
+  selector:
+    app: trtc-web
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+  type: LoadBalancer
+
+---
+# ─── Server Service (LoadBalancer — expose API to Android/mobile clients) ────
+apiVersion: v1
+kind: Service
+metadata:
+  name: trtc-server-lb
+  namespace: trtc-demo
+  annotations:
+    service.kubernetes.io/qcloud-loadbalancer-internet-charge-type: "TRAFFIC_POSTPAID_BY_HOUR"
+    service.kubernetes.io/qcloud-loadbalancer-internet-max-bandwidth-out: "10"
+spec:
+  selector:
+    app: trtc-server
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+  type: LoadBalancer

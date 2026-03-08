@@ -30,7 +30,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="等待对方接听..."
+            android:text="@string/status_waiting"
             android:textColor="#8A8FA8"
             android:textSize="16sp" />
 
@@ -87,9 +87,66 @@
             android:id="@+id/tvCallStatus"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="连接中..."
+            android:text="@string/status_connecting"
             android:textColor="#8A8FA8"
             android:textSize="11sp" />
+
+    </LinearLayout>
+
+    <!-- ── Subtitle overlay ─────────────────────────────────────────────── -->
+    <!-- elevation=8dp ensures this renders above the controls panel (which has no elevation). -->
+    <!-- In FrameLayout, later children are drawn on top, but elevation overrides that order.  -->
+    <LinearLayout
+        android:id="@+id/subtitleOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="264dp"
+        android:paddingHorizontal="20dp"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:elevation="8dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/tvSubtitleOriginal"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="#CC000000"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="6dp"
+            android:textColor="#FFFFFF"
+            android:textSize="15sp"
+            android:layout_gravity="center"
+            android:maxWidth="340dp" />
+
+        <TextView
+            android:id="@+id/tvSubtitleTranslation"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="#CC000000"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="5dp"
+            android:textColor="#FFEE88"
+            android:textSize="13sp"
+            android:layout_gravity="center"
+            android:layout_marginTop="4dp"
+            android:maxWidth="340dp"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/tvSubtitleTranslationId"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="#CC000000"
+            android:paddingHorizontal="12dp"
+            android:paddingVertical="5dp"
+            android:textColor="#88DDFF"
+            android:textSize="13sp"
+            android:layout_gravity="center"
+            android:layout_marginTop="4dp"
+            android:maxWidth="340dp"
+            android:visibility="gone" />
 
     </LinearLayout>
 
@@ -108,12 +165,12 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center"
-            android:layout_marginBottom="16dp">
+            android:layout_marginBottom="12dp">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="分辨率: "
+                android:text="@string/label_resolution"
                 android:textColor="#CCCCCC"
                 android:textSize="13sp" />
 
@@ -125,74 +182,94 @@
 
         </LinearLayout>
 
-        <!-- Row 2: Control buttons -->
+        <!-- Button panel: 2 rows -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center"
+            android:orientation="vertical"
             android:background="#66000000"
-            android:padding="12dp">
+            android:paddingHorizontal="12dp"
+            android:paddingTop="12dp"
+            android:paddingBottom="12dp">
 
-            <Button
-                android:id="@+id/btnToggleMic"
-                android:layout_width="0dp"
-                android:layout_height="56dp"
-                android:layout_weight="1"
-                android:layout_margin="6dp"
-                android:text="静音"
-                android:textSize="12sp"
-                android:backgroundTint="#333333"
-                android:textColor="#FFFFFF"
-                android:stateListAnimator="@null" />
+            <!-- Row 2a: Mute | Cam | Hang Up -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center">
 
-            <Button
-                android:id="@+id/btnToggleCam"
-                android:layout_width="0dp"
-                android:layout_height="56dp"
-                android:layout_weight="1"
-                android:layout_margin="6dp"
-                android:text="关摄像头"
-                android:textSize="12sp"
-                android:backgroundTint="#333333"
-                android:textColor="#FFFFFF"
-                android:stateListAnimator="@null" />
+                <Button
+                    android:id="@+id/btnToggleMic"
+                    android:layout_width="0dp"
+                    android:layout_height="60dp"
+                    android:layout_weight="1"
+                    android:layout_margin="5dp"
+                    android:text="@string/btn_mute"
+                    android:textSize="13sp"
+                    android:backgroundTint="#333333"
+                    android:textColor="#FFFFFF"
+                    android:stateListAnimator="@null" />
 
-            <Button
-                android:id="@+id/btnHangup"
-                android:layout_width="0dp"
-                android:layout_height="56dp"
-                android:layout_weight="1"
-                android:layout_margin="6dp"
-                android:text="挂断"
-                android:textSize="12sp"
-                android:backgroundTint="#E5363B"
-                android:textColor="#FFFFFF"
-                android:stateListAnimator="@null" />
+                <Button
+                    android:id="@+id/btnToggleCam"
+                    android:layout_width="0dp"
+                    android:layout_height="60dp"
+                    android:layout_weight="1"
+                    android:layout_margin="5dp"
+                    android:text="@string/btn_cam_off"
+                    android:textSize="13sp"
+                    android:backgroundTint="#333333"
+                    android:textColor="#FFFFFF"
+                    android:stateListAnimator="@null" />
 
-            <Button
-                android:id="@+id/btnSwitchCam"
-                android:layout_width="0dp"
-                android:layout_height="56dp"
-                android:layout_weight="1"
-                android:layout_margin="6dp"
-                android:text="后置"
-                android:textSize="12sp"
-                android:backgroundTint="#333333"
-                android:textColor="#FFFFFF"
-                android:stateListAnimator="@null" />
+                <Button
+                    android:id="@+id/btnHangup"
+                    android:layout_width="0dp"
+                    android:layout_height="60dp"
+                    android:layout_weight="1"
+                    android:layout_margin="5dp"
+                    android:text="@string/btn_hang_up"
+                    android:textSize="13sp"
+                    android:backgroundTint="#E5363B"
+                    android:textColor="#FFFFFF"
+                    android:stateListAnimator="@null" />
 
-            <Button
-                android:id="@+id/btnScreenShare"
-                android:layout_width="0dp"
-                android:layout_height="56dp"
-                android:layout_weight="1"
-                android:layout_margin="6dp"
-                android:text="共享屏幕"
-                android:textSize="12sp"
-                android:backgroundTint="#1A5276"
-                android:textColor="#FFFFFF"
-                android:stateListAnimator="@null" />
+            </LinearLayout>
+
+            <!-- Row 2b: Switch Cam | Share Screen -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center"
+                android:layout_marginTop="8dp">
+
+                <Button
+                    android:id="@+id/btnSwitchCam"
+                    android:layout_width="0dp"
+                    android:layout_height="52dp"
+                    android:layout_weight="1"
+                    android:layout_margin="5dp"
+                    android:text="@string/btn_switch_rear"
+                    android:textSize="13sp"
+                    android:backgroundTint="#333333"
+                    android:textColor="#FFFFFF"
+                    android:stateListAnimator="@null" />
+
+                <Button
+                    android:id="@+id/btnScreenShare"
+                    android:layout_width="0dp"
+                    android:layout_height="52dp"
+                    android:layout_weight="1"
+                    android:layout_margin="5dp"
+                    android:text="@string/btn_share_screen"
+                    android:textSize="13sp"
+                    android:backgroundTint="#1A5276"
+                    android:textColor="#FFFFFF"
+                    android:stateListAnimator="@null" />
+
+            </LinearLayout>
 
         </LinearLayout>
     </LinearLayout>

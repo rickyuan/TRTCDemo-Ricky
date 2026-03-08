@@ -1,219 +1,263 @@
-/**
- * TRTC Signaling Server
- *
- * Responsibilities:
- *  1. Generate UserSig for both Android and Web clients
- *  2. Relay invitation / answer / hangup signals via WebSocket
- *
- * Setup:
- *  1. Fill in SDK_APP_ID and SECRET_KEY below (from https://console.trtc.io)
- *  2. npm install
- *  3. node index.js
- *
- * Endpoints:
- *  GET  /usersig?userId=<id>&expire=<seconds>   → { userSig, sdkAppId }
- *  GET  /health                                  → { status: "ok" }
- *  WS   ws://host:3000                           → signaling channel
- *
- * WebSocket message protocol (JSON):
- *   Client → Server:
- *     { type: "register",  userId: string, platform: "android"|"web" }
- *     { type: "invite",    roomId: number, fromUserId: string, toUserId?: string }
- *     { type: "accept",    roomId: number, fromUserId: string, toUserId: string }
- *     { type: "decline",   roomId: number, fromUserId: string, toUserId: string }
- *     { type: "hangup",    roomId: number, fromUserId: string }
- *     { type: "candidate", to: string, candidate: object }  // ICE (passthrough)
- *
- *   Server → Client:
- *     { type: "invite",   roomId: number, fromUserId: string, sdkAppId: number }
- *     { type: "accept",   roomId: number, fromUserId: string }
- *     { type: "decline",  roomId: number, fromUserId: string }
- *     { type: "hangup",   roomId: number, fromUserId: string }
- *     { type: "error",    message: string }
- */
+'use strict';
+
+require('dotenv').config();
 
 const express = require('express');
-const http = require('http');
-const path = require('path');
-const WebSocket = require('ws');
-const cors = require('cors');
-const { Api: TLSSigAPIv2 } = require('tls-sig-api-v2');
+const cors    = require('cors');
+const crypto  = require('crypto');
+const https   = require('https');
+const zlib    = require('zlib');
 
-// ─── CONFIG ────────────────────────────────────────────────────────────────────
-const SDK_APP_ID = 20026228;
-const SECRET_KEY = '070689a18f17b23fefddbcabacb9dd46d091d3cb8b1fdaf39f74055ea90f03c4';
-const PORT = 3000;
-// ───────────────────────────────────────────────────────────────────────────────
+// ─── Config (from environment variables only) ─────────────────────────────────
+const SDK_APP_ID      = parseInt(process.env.SDK_APP_ID, 10);
+const SECRET_KEY      = process.env.SECRET_KEY;
+const CLOUD_SECRET_ID = process.env.CLOUD_SECRET_ID;
+const CLOUD_SECRET_KEY= process.env.CLOUD_SECRET_KEY;
+const PORT            = parseInt(process.env.PORT || '3000', 10);
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
 
-if (SDK_APP_ID === 0 || SECRET_KEY === 'YOUR_SECRET_KEY_HERE') {
-  console.warn('⚠️  WARNING: SDK_APP_ID and SECRET_KEY are not configured in server/index.js');
-}
+// Validate required env vars on startup
+['SDK_APP_ID', 'SECRET_KEY', 'CLOUD_SECRET_ID', 'CLOUD_SECRET_KEY'].forEach(key => {
+  if (!process.env[key]) {
+    console.error(`[Config] Missing required environment variable: ${key}`);
+    process.exit(1);
+  }
+});
 
-// ─── UserSig Generation ─────────────────────────────────────────────────────
-const tlsApi = new TLSSigAPIv2(SDK_APP_ID, SECRET_KEY);
-
-function genUserSig(userId, expireSeconds = 604800 /* 7 days */) {
-  return tlsApi.genSig(userId, expireSeconds);
-}
-
-// ─── Express App ─────────────────────────────────────────────────────────────
+// ─── Express setup ────────────────────────────────────────────────────────────
 const app = express();
-app.use(cors());
 app.use(express.json());
 
-// Serve web client static files
-app.use(express.static(path.join(__dirname, '..', 'web')));
+// CORS — allow configured origins (or all origins if list is empty)
+app.use(cors({
+  origin: ALLOWED_ORIGINS.length > 0
+    ? (origin, cb) => {
+        // Allow requests with no origin (e.g. Android/mobile clients, curl)
+        if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+        cb(new Error(`CORS: origin ${origin} not allowed`));
+      }
+    : '*',
+  methods: ['GET', 'POST'],
+}));
 
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', sdkAppId: SDK_APP_ID });
-});
+// ─── UserSig generation ───────────────────────────────────────────────────────
 
-// Debug: list connected clients
-app.get('/debug/clients', (req, res) => {
-  const list = [];
-  clients.forEach((ws, uid) => list.push({ userId: uid, readyState: ws.readyState }));
-  res.json({ count: list.length, clients: list });
-});
+/**
+ * Generate a TRTC/Chat UserSig for the given userId.
+ * Algorithm: HMAC-SHA256 → deflate → base64url
+ */
+function genUserSig(userId, expireSeconds = 604800) {
+  const currTime = Math.floor(Date.now() / 1000);
 
-app.get('/usersig', (req, res) => {
-  const { userId, expire } = req.query;
-  if (!userId) {
+  const contentToBeSigned =
+    `TLS.identifier:${userId}\n` +
+    `TLS.sdkappid:${SDK_APP_ID}\n` +
+    `TLS.time:${currTime}\n` +
+    `TLS.expire:${expireSeconds}\n`;
+
+  const sig = crypto
+    .createHmac('sha256', SECRET_KEY)
+    .update(contentToBeSigned)
+    .digest('base64');
+
+  const sigDoc = JSON.stringify({
+    'TLS.ver':        '2.0',
+    'TLS.identifier': userId,
+    'TLS.sdkappid':   SDK_APP_ID,
+    'TLS.expire':     expireSeconds,
+    'TLS.time':       currTime,
+    'TLS.sig':        sig,
+  });
+
+  const compressed = zlib.deflateSync(Buffer.from(sigDoc, 'utf8'));
+  return compressed.toString('base64')
+    .replace(/\+/g, '*')
+    .replace(/\//g, '-')
+    .replace(/=/g,  '_');
+}
+
+// ─── Tencent Cloud API v3 (TC3-HMAC-SHA256) ──────────────────────────────────
+
+const TC_HOST    = 'trtc.intl.tencentcloudapi.com';
+const TC_SERVICE = 'trtc';
+const TC_VERSION = '2019-07-22';
+const TC_REGION  = 'ap-singapore';
+
+function utcDate(epochSeconds) {
+  return new Date(epochSeconds * 1000).toISOString().slice(0, 10);
+}
+
+function sha256Hex(str) {
+  return crypto.createHash('sha256').update(str, 'utf8').digest('hex');
+}
+
+function hmacSha256Bytes(key, data) {
+  return crypto.createHmac('sha256', key).update(data, 'utf8').digest();
+}
+
+/**
+ * Build TC3-HMAC-SHA256 Authorization header.
+ * Spec: https://www.tencentcloud.com/document/product/1427/65993
+ */
+function buildAuthorization(action, payload) {
+  const timestamp   = Math.floor(Date.now() / 1000);
+  const date        = utcDate(timestamp);
+  const contentType = 'application/json; charset=utf-8';
+
+  // Step 1: canonical request
+  const canonicalHeaders = `content-type:${contentType}\nhost:${TC_HOST}\n`;
+  const signedHeaders    = 'content-type;host';
+  const hashedPayload    = sha256Hex(payload);
+  const canonicalRequest = `POST\n/\n\n${canonicalHeaders}\n${signedHeaders}\n${hashedPayload}`;
+
+  // Step 2: string to sign
+  const credentialScope = `${date}/${TC_SERVICE}/tc3_request`;
+  const stringToSign    = `TC3-HMAC-SHA256\n${timestamp}\n${credentialScope}\n${sha256Hex(canonicalRequest)}`;
+
+  // Step 3: derive signing key
+  const keyDate    = hmacSha256Bytes(Buffer.from('TC3' + CLOUD_SECRET_KEY, 'utf8'), date);
+  const keyService = hmacSha256Bytes(keyDate, TC_SERVICE);
+  const keySigning = hmacSha256Bytes(keyService, 'tc3_request');
+  const signature  = hmacSha256Bytes(keySigning, stringToSign).toString('hex');
+
+  const authorization =
+    `TC3-HMAC-SHA256 Credential=${CLOUD_SECRET_ID}/${credentialScope}, ` +
+    `SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+  return { authorization, timestamp, contentType };
+}
+
+/**
+ * Call a Tencent Cloud TRTC REST API action.
+ */
+function callTencentCloudApi(action, payload) {
+  return new Promise((resolve, reject) => {
+    const { authorization, timestamp, contentType } = buildAuthorization(action, payload);
+    const bodyBuf = Buffer.from(payload, 'utf8');
+
+    const req = https.request({
+      hostname: TC_HOST,
+      path:     '/',
+      method:   'POST',
+      headers: {
+        'Content-Type':  contentType,
+        'Host':           TC_HOST,
+        'X-TC-Action':    action,
+        'X-TC-Version':   TC_VERSION,
+        'X-TC-Timestamp': String(timestamp),
+        'X-TC-Region':    TC_REGION,
+        'Authorization':  authorization,
+        'Content-Length': bodyBuf.length,
+      },
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => {
+        try { resolve(JSON.parse(data)); }
+        catch (e) { reject(new Error(`Invalid JSON from Tencent Cloud: ${data}`)); }
+      });
+    });
+
+    req.on('error', reject);
+    req.write(bodyBuf);
+    req.end();
+  });
+}
+
+// ─── Routes ───────────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/usersig
+ * Body: { userId: string, expire?: number }
+ * Returns: { sdkAppId, userId, userSig, expire }
+ */
+app.post('/api/usersig', (req, res) => {
+  const { userId, expire } = req.body || {};
+  if (!userId || typeof userId !== 'string' || !userId.trim()) {
     return res.status(400).json({ error: 'userId is required' });
   }
+  const expireSeconds = Number(expire) > 0 ? Number(expire) : 604800;
   try {
-    const userSig = genUserSig(userId, Number(expire) || 604800);
-    res.json({ userSig, sdkAppId: SDK_APP_ID });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    const userSig = genUserSig(userId.trim(), expireSeconds);
+    console.log(`[UserSig] generated for userId=${userId}`);
+    res.json({ sdkAppId: SDK_APP_ID, userId: userId.trim(), userSig, expire: expireSeconds });
+  } catch (e) {
+    console.error('[UserSig] error:', e);
+    res.status(500).json({ error: 'Failed to generate UserSig' });
   }
 });
 
-// ─── HTTP + WebSocket Server ──────────────────────────────────────────────────
-const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
-
-// Map: userId → WebSocket
-const clients = new Map();
-
-function broadcast(message, excludeUserId = null) {
-  const data = JSON.stringify(message);
-  let sent = 0;
-  clients.forEach((ws, uid) => {
-    if (uid !== excludeUserId && ws.readyState === WebSocket.OPEN) {
-      ws.send(data);
-      sent++;
-    }
-  });
-  console.log(`[WS] broadcast type=${message.type} to ${sent} client(s), total registered=${clients.size}`);
-}
-
-function sendTo(userId, message) {
-  const ws = clients.get(userId);
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify(message));
-    return true;
+/**
+ * POST /api/ai/start
+ * Body: { roomId: number, botUserId: string }
+ * Returns: { taskId: string }
+ *
+ * The server generates botUserSig internally — the client never needs the SECRET_KEY.
+ */
+app.post('/api/ai/start', async (req, res) => {
+  const { roomId, botUserId } = req.body || {};
+  if (!roomId || !botUserId) {
+    return res.status(400).json({ error: 'roomId and botUserId are required' });
   }
-  return false;
-}
 
-wss.on('connection', (ws, req) => {
-  let registeredUserId = null;
-  console.log(`[WS] New connection from ${req.socket.remoteAddress}`);
+  try {
+    const botUserSig = genUserSig(String(botUserId));
+    const payload = JSON.stringify({
+      SdkAppId: SDK_APP_ID,
+      RoomId:   String(roomId),
+      RoomIdType: 0,
+      TranscriptionParams: {
+        UserId:  botUserId,
+        UserSig: botUserSig,
+      },
+      RecognizeConfig:   { Language: '16k_zh_en' },
+      TranslationConfig: { TargetLanguages: ['en', 'zh'] },
+    });
 
-  ws.on('message', (raw) => {
-    let msg;
-    try {
-      msg = JSON.parse(raw.toString());
-    } catch {
-      ws.send(JSON.stringify({ type: 'error', message: 'Invalid JSON' }));
-      return;
+    console.log(`[AI Start] payload=${payload}`);
+    const data = await callTencentCloudApi('StartAITranscription', payload);
+    const errInfo = data?.Response?.Error;
+    if (errInfo) {
+      console.error(`[AI Start] API error: ${errInfo.Code} - ${errInfo.Message}`);
+      return res.status(502).json({ error: errInfo.Message, code: errInfo.Code });
     }
 
-    console.log(`[WS] ← ${JSON.stringify(msg)}`);
-
-    switch (msg.type) {
-      // Client identifies itself
-      case 'register': {
-        registeredUserId = msg.userId;
-        clients.set(msg.userId, ws);
-        console.log(`[WS] Registered: ${msg.userId} (${msg.platform || 'unknown'})`);
-        ws.send(JSON.stringify({ type: 'registered', userId: msg.userId }));
-        break;
-      }
-
-      // Android invites all web clients (or a specific user)
-      case 'invite': {
-        const payload = {
-          type: 'invite',
-          roomId: msg.roomId,
-          fromUserId: msg.fromUserId,
-          sdkAppId: SDK_APP_ID,
-        };
-        if (msg.toUserId) {
-          // Directed invite
-          if (!sendTo(msg.toUserId, payload)) {
-            ws.send(JSON.stringify({ type: 'error', message: `User ${msg.toUserId} not online` }));
-          }
-        } else {
-          // Broadcast to all other clients
-          broadcast(payload, msg.fromUserId);
-        }
-        break;
-      }
-
-      // Web accepts the call
-      case 'accept': {
-        sendTo(msg.toUserId, {
-          type: 'accept',
-          roomId: msg.roomId,
-          fromUserId: msg.fromUserId,
-        });
-        break;
-      }
-
-      // Web declines the call
-      case 'decline': {
-        sendTo(msg.toUserId, {
-          type: 'decline',
-          roomId: msg.roomId,
-          fromUserId: msg.fromUserId,
-        });
-        break;
-      }
-
-      // Either side hangs up
-      case 'hangup': {
-        broadcast(
-          { type: 'hangup', roomId: msg.roomId, fromUserId: msg.fromUserId },
-          msg.fromUserId,
-        );
-        break;
-      }
-
-      default:
-        ws.send(JSON.stringify({ type: 'error', message: `Unknown message type: ${msg.type}` }));
-    }
-  });
-
-  ws.on('close', () => {
-    if (registeredUserId) {
-      clients.delete(registeredUserId);
-      console.log(`[WS] Disconnected: ${registeredUserId}`);
-      // Notify others that this user went offline
-      broadcast({ type: 'user_offline', userId: registeredUserId }, registeredUserId);
-    }
-  });
-
-  ws.on('error', (err) => {
-    console.error(`[WS] Error for ${registeredUserId}: ${err.message}`);
-  });
+    const taskId = data?.Response?.TaskId;
+    console.log(`[AI Start] roomId=${roomId} taskId=${taskId}`);
+    res.json({ taskId });
+  } catch (e) {
+    console.error('[AI Start] error:', e);
+    res.status(500).json({ error: 'Failed to start AI transcription' });
+  }
 });
 
-server.listen(PORT, () => {
-  console.log(`\n🚀 TRTC Signaling Server running on http://localhost:${PORT}`);
-  console.log(`   UserSig API: GET http://localhost:${PORT}/usersig?userId=xxx`);
-  console.log(`   WebSocket:   ws://localhost:${PORT}`);
-  if (SDK_APP_ID === 0) {
-    console.log('\n⚠️  Configure SDK_APP_ID and SECRET_KEY in server/index.js to enable UserSig generation\n');
+/**
+ * POST /api/ai/stop
+ * Body: { taskId: string }
+ * Returns: { ok: true }
+ */
+app.post('/api/ai/stop', async (req, res) => {
+  const { taskId } = req.body || {};
+  if (!taskId) {
+    return res.status(400).json({ error: 'taskId is required' });
   }
+
+  try {
+    const payload = JSON.stringify({ SdkAppId: SDK_APP_ID, TaskId: taskId });
+    await callTencentCloudApi('StopAITranscription', payload);
+    console.log(`[AI Stop] taskId=${taskId}`);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[AI Stop] error:', e);
+    res.status(500).json({ error: 'Failed to stop AI transcription' });
+  }
+});
+
+// Health check
+app.get('/health', (_, res) => res.json({ status: 'ok', sdkAppId: SDK_APP_ID }));
+
+// ─── Start ────────────────────────────────────────────────────────────────────
+app.listen(PORT, () => {
+  console.log(`[Server] TRTC Demo backend running on http://localhost:${PORT}`);
+  console.log(`[Server] SDK_APP_ID=${SDK_APP_ID}  CORS origins=${ALLOWED_ORIGINS.join(', ') || '*'}`);
 });

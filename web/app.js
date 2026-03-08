@@ -1,30 +1,147 @@
 /**
  * TRTC 1v1 Video Call — Web Client
  *
+ * Signaling is done via Tencent Cloud Chat SDK (C2C custom messages).
+ *
  * Flow:
- *  1. User logs in → locally generate UserSig → login to Tencent Chat SDK
- *  2. Chat SDK receives Android's C2C "invite" message → incoming call UI shown
- *  3. User clicks "Accept" → send "accept" C2C → enterRoom → startLocalVideo
+ *  1. User logs in → Chat SDK login → waiting for incoming call
+ *  2. Android sends "invite" custom message → incoming call UI shown
+ *  3. User clicks "Accept" → enterRoom → startLocalVideo
  *  4. Remote (Android) video is rendered automatically via REMOTE_VIDEO_AVAILABLE
- *  5. Either side hangs up → send "hangup" C2C → exitRoom
+ *  5. Either side hangs up → exitRoom
  */
 
 'use strict';
 
-// ─── Config (edit before use) ─────────────────────────────────────────────────
-const CONFIG = {
-  SDK_APP_ID: 0,   // TODO: Replace with your SDKAppID from https://console.trtc.io
-  SECRET_KEY: '',  // TODO: Replace with your SecretKey  (demo/test only — do not ship in production)
+// ─── Config ──────────────────────────────────────────────────────────────────
+// SDK_APP_ID is a public identifier, safe to include in the client.
+const SDK_APP_ID = 20026228;
+
+// Backend server URL — all sensitive operations are proxied through here.
+// Change to your deployed server URL in production.
+const SERVER_URL = 'http://192.168.1.12:3000';
+
+// ─── i18n ─────────────────────────────────────────────────────────────────────
+const STRINGS = {
+  en: {
+    appTitle:        'TRTC Video Call',
+    appSubtitle:     'Enter your User ID to start',
+    labelUserId:     'User ID',
+    hintUserId:      'e.g. web_user_001',
+    btnLogin:        'Login & Wait for Call',
+    incomingTitle:   'Incoming Call',
+    callType:        'Incoming video call',
+    btnDecline:      'Decline',
+    btnAccept:       'Accept',
+    remotePlaceholder: 'Waiting for remote video...',
+    statusConnecting:'Connecting...',
+    btnMute:         'Mute',
+    btnCamera:       'Camera',
+    btnHangUp:       'Hang Up',
+    langToggle:      '中文',
+    // Dynamic
+    statusLoggingIn: 'Connecting to Chat SDK...',
+    statusLoggedIn:  (id) => `Logged in, waiting for call (${id})`,
+    statusLoginFail: (e)  => `Login failed: ${e}`,
+    statusConnFail:  (e)  => `Connection failed: ${e}`,
+    statusInCall:    'In call',
+    statusStream:    (t)  => `Stream received: type=${t}`,
+    statusScreenShare: 'Remote screen sharing...',
+    statusScreenShareActive: 'Screen share active',
+    statusScreenShareErr: (e) => `Screen stream error: ${e}`,
+    statusVideoErr:  (e)  => `Video stream error: ${e}`,
+    statusError:     (e)  => `Error: ${e}`,
+    waitingScreenShare: 'Waiting for screen share...',
+    waitingRemote:   'Waiting for remote video...',
+    callDeclined:    'Call declined',
+    callEndedRemote: 'Call ended by remote',
+    remoteLeft:      'Remote user left',
+    connFailed:      'Connection failed',
+    errEnterUserId:  'Please enter a User ID',
+    defaultCaller:   'Android User',
+  },
+  zh: {
+    appTitle:        'TRTC 视频通话',
+    appSubtitle:     '输入用户 ID 开始',
+    labelUserId:     '用户 ID',
+    hintUserId:      '例如: web_user_001',
+    btnLogin:        '登录并等待来电',
+    incomingTitle:   '来电',
+    callType:        '视频通话邀请',
+    btnDecline:      '拒绝',
+    btnAccept:       '接听',
+    remotePlaceholder: '等待对方视频...',
+    statusConnecting:'连接中...',
+    btnMute:         '静音',
+    btnCamera:       '摄像头',
+    btnHangUp:       '挂断',
+    langToggle:      'EN',
+    // Dynamic
+    statusLoggingIn: '正在连接 Chat SDK...',
+    statusLoggedIn:  (id) => `已登录，等待来电 (${id})`,
+    statusLoginFail: (e)  => `登录失败: ${e}`,
+    statusConnFail:  (e)  => `连接失败: ${e}`,
+    statusInCall:    '通话中',
+    statusStream:    (t)  => `收到视频流: type=${t}`,
+    statusScreenShare: '对方屏幕共享中...',
+    statusScreenShareActive: '屏幕共享显示中',
+    statusScreenShareErr: (e) => `屏幕流错误: ${e}`,
+    statusVideoErr:  (e)  => `视频流错误: ${e}`,
+    statusError:     (e)  => `错误: ${e}`,
+    waitingScreenShare: '等待分享画面...',
+    waitingRemote:   '等待对方视频...',
+    callDeclined:    '已拒绝来电',
+    callEndedRemote: '对方已挂断',
+    remoteLeft:      '对方已退出',
+    connFailed:      '连接失败',
+    errEnterUserId:  '请输入用户 ID',
+    defaultCaller:   'Android 用户',
+  },
 };
-// ─────────────────────────────────────────────────────────────────────────────
+
+let lang = localStorage.getItem('trtc_lang') || 'en';
+
+function t(key, ...args) {
+  const val = STRINGS[lang][key];
+  return typeof val === 'function' ? val(...args) : (val ?? key);
+}
+
+function applyLanguage() {
+  localStorage.setItem('trtc_lang', lang);
+  $('btn-lang').textContent = t('langToggle');
+
+  // Login screen
+  $('app-title').textContent    = t('appTitle');
+  $('app-subtitle').textContent = t('appSubtitle');
+  document.querySelector('label[for="input-userid"]').textContent = t('labelUserId');
+  $('input-userid').placeholder = t('hintUserId');
+  $('btn-login').textContent    = t('btnLogin');
+
+  // Incoming screen — .call-type text & .action-label spans (not the buttons themselves)
+  const callTypeEl = document.querySelector('#incoming-screen .call-type');
+  if (callTypeEl) callTypeEl.textContent = t('callType');
+  const declineLabel = $('btn-decline').parentElement.querySelector('.action-label');
+  const acceptLabel  = $('btn-accept').parentElement.querySelector('.action-label');
+  if (declineLabel) declineLabel.textContent = t('btnDecline');
+  if (acceptLabel)  acceptLabel.textContent  = t('btnAccept');
+
+  // Call screen — .ctrl-label is a sibling of the button, not a child
+  remotePlaceholder.querySelector('span:last-child').textContent = t('remotePlaceholder');
+  const micLabel    = $('btn-toggle-mic').parentElement.querySelector('.ctrl-label');
+  const camLabel    = $('btn-toggle-cam').parentElement.querySelector('.ctrl-label');
+  const hangupLabel = $('btn-hangup').parentElement.querySelector('.ctrl-label');
+  if (micLabel)    micLabel.textContent    = t('btnMute');
+  if (camLabel)    camLabel.textContent    = t('btnCamera');
+  if (hangupLabel) hangupLabel.textContent = t('btnHangUp');
+}
 
 // ─── State ───────────────────────────────────────────────────────────────────
 const state = {
   userId: '',
-  userSig: '',
-  chat: null,
+  chat: null,          // TencentCloudChat instance
   trtc: null,
-  pendingInvite: null,   // { roomId, fromUserId }
+  sdkAppId: SDK_APP_ID,
+  pendingInvite: null, // { roomId, fromUserId }
   inCall: false,
   micMuted: false,
   camOff: false,
@@ -37,13 +154,13 @@ const state = {
 // ─── DOM ──────────────────────────────────────────────────────────────────────
 const $ = (id) => document.getElementById(id);
 
-const loginScreen       = $('login-screen');
-const incomingScreen    = $('incoming-screen');
-const callScreen        = $('call-screen');
-const loginStatus       = $('login-status');
-const callerNameEl      = $('caller-name');
-const callStatusText    = $('call-status-text');
-const callTimer         = $('call-timer');
+const loginScreen    = $('login-screen');
+const incomingScreen = $('incoming-screen');
+const callScreen     = $('call-screen');
+const loginStatus    = $('login-status');
+const callerNameEl   = $('caller-name');
+const callStatusText = $('call-status-text');
+const callTimer      = $('call-timer');
 const remotePlaceholder = $('remote-placeholder');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -79,96 +196,168 @@ function stopTimer() {
   callTimer.textContent = '00:00';
 }
 
-// ─── UserSig (local generation — demo/test only) ──────────────────────────────
-// Implements the same algorithm as tls-sig-api-v2:
-//   HMAC-SHA256 sign → JSON pack → zlib deflate → base64url encode
-async function genTestUserSig(userId, expire = 604800) {
-  const { SDK_APP_ID: sdkAppId, SECRET_KEY: secretKey } = CONFIG;
-  const currTime = Math.floor(Date.now() / 1000);
+// ─── Server API helpers ───────────────────────────────────────────────────────
 
-  const plaintext =
-    `TLS.identifier:${userId}\nTLS.sdkappid:${sdkAppId}\nTLS.time:${currTime}\nTLS.expire:${expire}\n`;
-
-  const enc = new TextEncoder();
-  const cryptoKey = await crypto.subtle.importKey(
-    'raw', enc.encode(secretKey), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
-  );
-  const sigBuf    = await crypto.subtle.sign('HMAC', cryptoKey, enc.encode(plaintext));
-  const sigBase64 = btoa(String.fromCharCode(...new Uint8Array(sigBuf)));
-
-  const jsonStr = JSON.stringify({
-    'TLS.ver':        '2.0',
-    'TLS.identifier': String(userId),
-    'TLS.sdkappid':   Number(sdkAppId),
-    'TLS.expire':     Number(expire),
-    'TLS.time':       Number(currTime),
-    'TLS.sig':        sigBase64,
+/**
+ * Fetch a UserSig for the given userId from the backend server.
+ * The server holds the SECRET_KEY — the browser never sees it.
+ */
+async function genTestUserSig(userId) {
+  const resp = await fetch(`${SERVER_URL}/api/usersig`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId }),
   });
-
-  const compressed = pako.deflate(jsonStr);
-  return btoa(String.fromCharCode(...compressed))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_');
+  if (!resp.ok) throw new Error(`UserSig request failed: HTTP ${resp.status}`);
+  const data = await resp.json();
+  if (data.error) throw new Error(`UserSig error: ${data.error}`);
+  return data.userSig;
 }
 
-// ─── Chat SDK Signaling ───────────────────────────────────────────────────────
-function handleChatMessages({ data: messages }) {
-  for (const msg of messages) {
-    if (msg.type !== TencentCloudChat.TYPES.MSG_CUSTOM) continue;
-    if (msg.conversationType !== TencentCloudChat.TYPES.CONV_C2C) continue;
+// ─── AI Transcription ─────────────────────────────────────────────────────────
 
-    let payload;
-    try { payload = JSON.parse(msg.payload.data); } catch { continue; }
-    console.log('[Chat] ←', payload);
+let transcriptionTaskId = null;
 
-    const { action, roomId } = payload;
-    switch (action) {
-      case 'invite':
-        handleIncomingInvite({ roomId, fromUserId: msg.from });
-        break;
-      case 'hangup':
-        if (state.inCall) endCall('对方已挂断');
-        break;
-    }
+async function startTranscription(roomId, userId) {
+  // Note: AI transcription is started by Android (the caller) via the backend server.
+  // Web does NOT call this to avoid creating a duplicate task with the same bot userId.
+  console.log('[Transcription] skipped on web side — Android caller handles this');
+}
+
+async function stopTranscription() {
+  if (!transcriptionTaskId) return;
+  const taskId = transcriptionTaskId;
+  transcriptionTaskId = null;
+  try {
+    const resp = await fetch(`${SERVER_URL}/api/ai/stop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId }),
+    });
+    const data = await resp.json();
+    console.log('[Transcription] stopped', data);
+  } catch (e) {
+    console.warn('[Transcription] stopTranscription failed:', e);
   }
 }
 
-async function connectSignaling(userId, userSig) {
-  state.chat = TencentCloudChat.create({ SDKAppID: CONFIG.SDK_APP_ID });
-  state.chat.on(TencentCloudChat.EVENT.MESSAGE_RECEIVED, handleChatMessages);
-  state.chat.on(TencentCloudChat.EVENT.KICKED_OUT, () => {
-    if (state.inCall) endCall('被踢下线');
-    else setLoginStatus('已被踢下线，请重新登录', 'error');
-  });
-  await state.chat.login({ userID: userId, userSig });
+// ─── Subtitle display ─────────────────────────────────────────────────────────
+
+// Correlate transcription + all translation messages by roundId.
+// NOTE: Per TRTC docs, transcription messages do NOT include a roundid field,
+// while translation messages DO. To handle this mismatch, we keep lastTranscriptionText
+// as a fallback so translation messages can still display with the current text.
+// roundId → { text: string, translations: Map<lang, text>, finalCount: number }
+const subtitleRounds = new Map();
+let lastTranscriptionText = '';
+
+let subtitleHideTimer = null;
+
+// translations: Map<lang, text>  e.g. Map { "en" => "Hello", "id" => "Halo" }
+function showSubtitle(originalText, translations, isFinal) {
+  if (!originalText) return;
+  const overlay = $('subtitle-overlay');
+  const origEl  = $('subtitle-original');
+  const transEn = $('subtitle-translation');
+
+  // Line 1: original Chinese transcription
+  origEl.textContent = originalText;
+
+  // Line 2: English translation
+  const en = translations.get('en') || '';
+  if (en) {
+    transEn.textContent = en;
+    transEn.classList.remove('hidden');
+  } else {
+    transEn.classList.add('hidden');
+  }
+
+  overlay.classList.remove('hidden', 'interim');
+  if (!isFinal) overlay.classList.add('interim');
+
+  clearTimeout(subtitleHideTimer);
+  if (isFinal) {
+    subtitleHideTimer = setTimeout(() => overlay.classList.add('hidden'), 5000);
+  }
 }
 
-function sigSend(toUserId, payload) {
+// ─── Chat SDK Signaling ──────────────────────────────────────────────────────
+async function initChatSDK(userId) {
+  const chat = TencentCloudChat.create({ SDKAppID: SDK_APP_ID });
+  chat.setLogLevel(1); // Release level
+
+  // Listen for incoming custom messages BEFORE login
+  chat.on(TencentCloudChat.EVENT.MESSAGE_RECEIVED, (event) => {
+    const messages = event.data;
+    for (const msg of messages) {
+      if (msg.type !== TencentCloudChat.TYPES.MSG_CUSTOM) continue;
+      const fromUserId = msg.from;
+      try {
+        const payload = JSON.parse(msg.payload.data);
+        console.log('[Chat] ←', fromUserId, payload);
+        handleSignalingMessage(fromUserId, payload);
+      } catch (e) {
+        console.warn('[Chat] Failed to parse custom message', e);
+      }
+    }
+  });
+
+  // Login
+  const userSig = await genTestUserSig(userId);
+  await chat.login({ userID: userId, userSig });
+
+  state.chat = chat;
+  return chat;
+}
+
+function handleSignalingMessage(fromUserId, payload) {
+  const { action, roomId, sdkAppId } = payload;
+
+  switch (action) {
+    case 'invite':
+      handleIncomingInvite({ roomId, fromUserId, sdkAppId: sdkAppId || SDK_APP_ID });
+      break;
+
+    case 'hangup':
+      if (state.inCall) endCall(t('callEndedRemote'));
+      break;
+
+    case 'accept':
+    case 'decline':
+      // Android side is the caller, web is the callee — these shouldn't arrive here
+      // but handle gracefully
+      console.log(`[Chat] Received ${action} from ${fromUserId}`);
+      break;
+
+    default:
+      console.warn('[Chat] Unknown action:', action);
+  }
+}
+
+async function sigSend(toUserId, payload) {
   if (!state.chat) return;
   const msg = state.chat.createCustomMessage({
     to: toUserId,
     conversationType: TencentCloudChat.TYPES.CONV_C2C,
-    payload: { data: JSON.stringify(payload), description: '', extension: '' },
+    payload: { data: JSON.stringify(payload) },
   });
-  state.chat.sendMessage(msg).catch((e) => console.error('[Chat] send error:', e));
-}
-
-async function disconnectSignaling() {
-  if (!state.chat) return;
-  state.chat.off(TencentCloudChat.EVENT.MESSAGE_RECEIVED, handleChatMessages);
-  try { await state.chat.logout(); } catch (_) {}
-  state.chat.destroy();
-  state.chat = null;
+  try {
+    await state.chat.sendMessage(msg);
+    console.log('[Chat] →', toUserId, payload);
+  } catch (e) {
+    console.error('[Chat] Send failed:', e);
+  }
 }
 
 // ─── Incoming call ────────────────────────────────────────────────────────────
-function handleIncomingInvite({ roomId, fromUserId }) {
+function handleIncomingInvite(msg) {
   if (state.inCall) {
-    sigSend(fromUserId, { action: 'decline', roomId });
+    sigSend(msg.fromUserId, { action: 'decline', roomId: msg.roomId });
     return;
   }
-  state.pendingInvite = { roomId, fromUserId };
-  callerNameEl.textContent = fromUserId || 'Android 用户';
+  state.pendingInvite = { roomId: msg.roomId, fromUserId: msg.fromUserId };
+  state.sdkAppId = msg.sdkAppId || SDK_APP_ID;
+  callerNameEl.textContent = msg.fromUserId || t('defaultCaller');
   showScreen('incoming');
 }
 
@@ -176,43 +365,45 @@ function handleIncomingInvite({ roomId, fromUserId }) {
 async function joinRoom(roomId, userId, userSig, sdkAppId) {
   state.trtc = TRTC.create();
 
-  // TRTC Web SDK v5: stream types are plain strings
   const ST_MAIN = 'main';
   const ST_SUB  = 'sub';
 
   state.trtc.on(TRTC.EVENT.REMOTE_VIDEO_AVAILABLE, async ({ userId: remoteId, streamType }) => {
     const isSub = streamType === ST_SUB;
-    console.log(`VIDEO_AVAIL: ${remoteId} type=${streamType}`);
-    setCallStatus(`收到视频流: type=${streamType}`);
+    console.log(`VIDEO_AVAIL: ${remoteId} type=${streamType} isSub=${isSub}`);
+    setCallStatus(t('statusStream', streamType));
     state.remoteUserId = remoteId;
 
     if (isSub) {
-      // ── Screen share started ──────────────────────────────────────────────
-      setCallStatus('对方屏幕共享中...');
+      setCallStatus(t('statusScreenShare'));
       try { await state.trtc.stopRemoteVideo({ userId: remoteId, streamType: ST_MAIN }); } catch (_) {}
-      remotePlaceholder.querySelector('span').textContent = '等待分享画面...';
+      remotePlaceholder.querySelector('span:last-child').textContent = t('waitingScreenShare');
       remotePlaceholder.style.display = 'flex';
       await state.trtc.startRemoteVideo({ userId: remoteId, streamType: ST_SUB, view: 'remote-video' })
-        .then(() => { remotePlaceholder.style.display = 'none'; setCallStatus('屏幕共享显示中'); })
-        .catch((e) => setCallStatus(`屏幕流错误: ${e.message}`));
+        .then(() => {
+          remotePlaceholder.style.display = 'none';
+          setCallStatus(t('statusScreenShareActive'));
+          console.log('SUB render OK');
+        })
+        .catch((e) => { console.log(`SUB render ERR: ${e.message}`); setCallStatus(t('statusScreenShareErr', e.message)); });
       state.screenShareActive = true;
     } else {
-      // ── Camera (MAIN) stream ──────────────────────────────────────────────
       if (!state.screenShareActive) {
         remotePlaceholder.style.display = 'none';
         await state.trtc.startRemoteVideo({ userId: remoteId, streamType: ST_MAIN, view: 'remote-video' })
-          .then(() => setCallStatus('通话中'))
-          .catch((e) => setCallStatus(`视频流错误: ${e.message}`));
+          .then(() => setCallStatus(t('statusInCall')))
+          .catch((e) => { console.log(`MAIN render ERR: ${e.message}`); setCallStatus(t('statusVideoErr', e.message)); });
       }
     }
   });
 
   state.trtc.on(TRTC.EVENT.REMOTE_VIDEO_UNAVAILABLE, async ({ userId: remoteId, streamType }) => {
+    console.log(`VIDEO_UNAVAIL: ${remoteId} type=${streamType}`);
+
     if (streamType === ST_SUB && state.screenShareActive) {
-      // ── Screen share stopped — restore normal layout ──────────────────────
       state.screenShareActive = false;
       try { await state.trtc.stopRemoteVideo({ userId: remoteId, streamType: ST_SUB }); } catch (_) {}
-      remotePlaceholder.querySelector('span').textContent = '等待对方视频...';
+      remotePlaceholder.querySelector('span:last-child').textContent = t('waitingRemote');
       remotePlaceholder.style.display = 'none';
       await state.trtc.startRemoteVideo({ userId: remoteId, streamType: ST_MAIN, view: 'remote-video' }).catch(console.error);
     } else if (streamType === ST_MAIN && !state.screenShareActive) {
@@ -221,23 +412,100 @@ async function joinRoom(roomId, userId, userSig, sdkAppId) {
     }
   });
 
-  state.trtc.on(TRTC.EVENT.REMOTE_USER_EXIT, () => {
+  state.trtc.on(TRTC.EVENT.REMOTE_USER_EXIT, ({ userId: remoteId }) => {
+    console.log(`USER_EXIT: ${remoteId}`);
     remotePlaceholder.style.display = 'flex';
-    endCall('对方已退出');
+    endCall(t('remoteLeft'));
   });
 
   state.trtc.on(TRTC.EVENT.ERROR, (error) => {
     console.error('[TRTC] Error:', error);
-    setCallStatus(`错误: ${error.message}`);
+    setCallStatus(t('statusError', error.message));
   });
 
-  await state.trtc.enterRoom({ sdkAppId: Number(sdkAppId), userId, userSig, roomId: Number(roomId) });
+  // Receive AI transcription subtitles (type = 10000).
+  // Transcription and translation arrive as SEPARATE messages:
+  //   transcription msg: { payload: { text, end } }  — NO roundid
+  //   translation  msg:  { payload: { translation_text, translation_language, roundid, end } }
+  // NOTE: cmdId is NOT filtered — docs don't guarantee translations use cmdId=1.
+const TRANSLATION_TARGET_COUNT = 2; // en + zh
+
+  function handleCmdData(rawData) {
+    try {
+      const msg = JSON.parse(new TextDecoder().decode(rawData));
+      // 10000 = ASR transcription, 10001 = translation
+      if (msg.type !== 10000 && msg.type !== 10001) return;
+      const pl = msg.payload;
+      if (!pl) return;
+      const roundId = pl.roundid ?? '';
+      const isFinal = !!pl.end;
+
+      // Log every type=10000 message for diagnostics
+      console.log('[TRTC sub] keys=%s roundId=%s isFinal=%s',
+        Object.keys(pl).join(','), roundId, isFinal);
+
+      if (!subtitleRounds.has(roundId)) {
+        subtitleRounds.set(roundId, { text: '', translations: new Map(), finalCount: 0 });
+      }
+      const round = subtitleRounds.get(roundId);
+
+      if ('translation_text' in pl) {
+        const lang = pl.translation_language ?? '';
+        if (lang) round.translations.set(lang, pl.translation_text ?? '');
+        if (isFinal) {
+          round.finalCount++;
+          if (round.finalCount >= TRANSLATION_TARGET_COUNT) subtitleRounds.delete(roundId);
+        }
+        // Transcription messages have no roundid, so round.text may be empty here.
+        // Fall back to the most recently received transcription text.
+        const textToShow = round.text || lastTranscriptionText;
+        if (textToShow) {
+          console.log('[Subtitle/trans] lang=%s isFinal=%s trans=%s', lang, isFinal, pl.translation_text);
+          showSubtitle(textToShow, round.translations, isFinal);
+        }
+      } else if ('text' in pl) {
+        round.text = pl.text ?? '';
+        if (round.text) lastTranscriptionText = round.text;
+        console.log('[Subtitle/orig] isFinal=%s text=%s', isFinal, round.text);
+        if (round.text) showSubtitle(round.text, round.translations, isFinal);
+      }
+    } catch (e) {
+      console.error('[TRTC] subtitle parse error:', e);
+    }
+  }
+
+  // Listen to CUSTOM_MESSAGE for all cmdIds (not just 1)
+  state.trtc.on(TRTC.EVENT.CUSTOM_MESSAGE, (event) => {
+    console.log('[TRTC] CUSTOM_MESSAGE cmdId=%d bytes=%d', event.cmdId, event.data?.byteLength ?? 0);
+    handleCmdData(event.data);
+  });
+
+  // Also listen to SEI_MESSAGE in case the bot uses that channel
+  if (TRTC.EVENT.SEI_MESSAGE) {
+    state.trtc.on(TRTC.EVENT.SEI_MESSAGE, (event) => {
+      console.log('[TRTC] SEI_MESSAGE bytes=%d', event.data?.byteLength ?? 0);
+      handleCmdData(event.data);
+    });
+  }
+
+  await state.trtc.enterRoom({
+    sdkAppId: Number(sdkAppId),
+    userId,
+    userSig,
+    roomId: Number(roomId),
+  });
+
   await state.trtc.startLocalAudio();
   await state.trtc.startLocalVideo({ view: 'local-video' });
+  // Note: AI transcription bot is started by Android (the caller) via StartAITranscription REST API.
+  // Web does NOT call StartAITranscription to avoid creating a duplicate task with the same
+  // bot userId, which can interfere with the translation feature.
 }
 
 async function leaveRoom() {
   if (!state.trtc) return;
+  subtitleRounds.clear();
+  lastTranscriptionText = '';
   try {
     await state.trtc.stopLocalVideo();
     await state.trtc.stopLocalAudio();
@@ -253,24 +521,34 @@ async function leaveRoom() {
 async function acceptCall() {
   const { roomId, fromUserId } = state.pendingInvite;
   showScreen('call');
-  setCallStatus('正在连接...');
+  setCallStatus(t('statusConnecting'));
 
   try {
+    const userSig = await genTestUserSig(state.userId);
+
+    // Notify Android we accepted
     sigSend(fromUserId, { action: 'accept', roomId });
-    await joinRoom(roomId, state.userId, state.userSig, CONFIG.SDK_APP_ID);
+
+    await joinRoom(roomId, state.userId, userSig, state.sdkAppId);
     state.inCall = true;
-    setCallStatus('通话中');
+    setCallStatus(t('statusInCall'));
     startTimer();
   } catch (err) {
     console.error('[acceptCall]', err);
-    setCallStatus(`连接失败: ${err.message}`);
-    setTimeout(() => endCall('连接失败'), 2000);
+    setCallStatus(t('statusConnFail', err.message));
+    setTimeout(() => endCall(t('connFailed')), 2000);
   }
 }
 
 async function endCall(reason = '') {
   if (state.timerInterval) stopTimer();
 
+  // Stop transcription bot and hide subtitles
+  stopTranscription();
+  clearTimeout(subtitleHideTimer);
+  $('subtitle-overlay').classList.add('hidden');
+
+  // Notify other side
   if (state.pendingInvite) {
     sigSend(state.pendingInvite.fromUserId, {
       action: 'hangup',
@@ -279,12 +557,12 @@ async function endCall(reason = '') {
   }
 
   await leaveRoom();
-  state.inCall          = false;
-  state.pendingInvite   = null;
-  state.micMuted        = false;
-  state.camOff          = false;
+  state.inCall = false;
+  state.pendingInvite = null;
+  state.micMuted = false;
+  state.camOff = false;
   state.screenShareActive = false;
-  state.remoteUserId    = null;
+  state.remoteUserId = null;
 
   remotePlaceholder.style.display = 'flex';
   showScreen('login');
@@ -292,23 +570,25 @@ async function endCall(reason = '') {
 }
 
 // ─── Controls ─────────────────────────────────────────────────────────────────
+$('btn-lang').addEventListener('click', () => {
+  lang = lang === 'en' ? 'zh' : 'en';
+  applyLanguage();
+});
+
 $('btn-login').addEventListener('click', async () => {
   const userId = $('input-userid').value.trim();
-  if (!userId) return setLoginStatus('请输入用户 ID', 'error');
-  if (!CONFIG.SDK_APP_ID || !CONFIG.SECRET_KEY) {
-    return setLoginStatus('请先在 app.js 中填写 SDK_APP_ID 和 SECRET_KEY', 'error');
-  }
+  if (!userId) return setLoginStatus(t('errEnterUserId'), 'error');
 
   $('btn-login').disabled = true;
-  setLoginStatus('正在连接...');
+  setLoginStatus(t('statusLoggingIn'));
 
   try {
-    state.userId  = userId;
-    state.userSig = await genTestUserSig(userId);
-    await connectSignaling(userId, state.userSig);
-    setLoginStatus(`已连接，等待来电 (${userId})`, 'success');
+    state.userId = userId;
+    await initChatSDK(userId);
+    setLoginStatus(t('statusLoggedIn', userId), 'success');
   } catch (err) {
-    setLoginStatus(`连接失败: ${err.message}`, 'error');
+    console.error('[Login]', err);
+    setLoginStatus(t('statusLoginFail', err.message), 'error');
     $('btn-login').disabled = false;
   }
 });
@@ -324,7 +604,7 @@ $('btn-decline').addEventListener('click', () => {
   }
   state.pendingInvite = null;
   showScreen('login');
-  setLoginStatus('已拒绝来电');
+  setLoginStatus(t('callDeclined'));
 });
 
 $('btn-hangup').addEventListener('click', () => endCall());
@@ -334,7 +614,7 @@ $('btn-toggle-mic').addEventListener('click', async () => {
   state.micMuted = !state.micMuted;
   await state.trtc.updateLocalAudio({ mute: state.micMuted });
   $('btn-toggle-mic').classList.toggle('muted', state.micMuted);
-  $('btn-toggle-mic').querySelector('.label').textContent = state.micMuted ? '已静音' : '麦克风';
+  // label is now managed in HTML ctrl-label span, no JS update needed
 });
 
 $('btn-toggle-cam').addEventListener('click', async () => {
@@ -346,5 +626,8 @@ $('btn-toggle-cam').addEventListener('click', async () => {
     await state.trtc.startLocalVideo({ view: 'local-video' });
   }
   $('btn-toggle-cam').classList.toggle('muted', state.camOff);
-  $('btn-toggle-cam').querySelector('.label').textContent = state.camOff ? '摄像头关' : '摄像头';
+  // label is now managed in HTML ctrl-label span, no JS update needed
 });
+
+// ─── Init language on load ────────────────────────────────────────────────────
+applyLanguage();

@@ -13,3 +13,6 @@ android/captures/
 # Node.js
 server/node_modules/
 server/.env
+
+# Kubernetes secrets (contain real credentials — never commit)
+k8s/secret.yaml

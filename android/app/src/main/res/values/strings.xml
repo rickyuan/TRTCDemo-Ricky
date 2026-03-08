@@ -1,4 +1,74 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">TRTC Demo</string>
+
+    <!-- MainActivity -->
+    <string name="title_main">TRTC Video Call</string>
+    <string name="subtitle_main">Android</string>
+    <string name="label_user_id">User ID</string>
+    <string name="hint_user_id">e.g. android_user_001</string>
+    <string name="label_remote_id">Remote User ID</string>
+    <string name="hint_remote_id">e.g. web_user_001</string>
+    <string name="btn_start_call">Start Video Call</string>
+    <string name="btn_language">中文</string>
+
+    <!-- Permissions -->
+    <string name="permission_required">Camera and microphone permissions are required</string>
+
+    <!-- Input errors -->
+    <string name="error_enter_user_id">Please enter User ID</string>
+    <string name="error_enter_remote_id">Please enter Remote User ID</string>
+    <string name="error_generic">Error: %1$s</string>
+    <string name="error_usersig_failed">Failed to get UserSig from server. Check server connection.</string>
+
+    <!-- CallActivity — status -->
+    <string name="status_connecting">Connecting...</string>
+    <string name="status_waiting">Waiting for answer...</string>
+    <string name="status_waiting_answer">Connected, waiting for answer…</string>
+    <string name="status_in_call">In call</string>
+    <string name="status_connected">Connected</string>
+    <string name="status_screen_sharing">Screen sharing</string>
+    <string name="room_label">Room: %1$d</string>
+
+    <!-- CallActivity — resolution picker -->
+    <string name="label_resolution">Resolution: </string>
+
+    <!-- CallActivity — button labels -->
+    <string name="btn_mute">Mute</string>
+    <string name="btn_unmute">Unmute</string>
+    <string name="btn_cam_off">Cam Off</string>
+    <string name="btn_cam_on">Cam On</string>
+    <string name="btn_hang_up">Hang Up</string>
+    <string name="btn_switch_rear">Rear</string>
+    <string name="btn_switch_front">Front</string>
+    <string name="btn_share_screen">Share Screen</string>
+    <string name="btn_stop_share">Stop Share</string>
+
+    <!-- CallActivity — toasts -->
+    <string name="toast_entered_room">Entered room %1$d</string>
+    <string name="toast_failed_enter_room">Failed to enter room, code: %1$d</string>
+    <string name="toast_user_joined">%1$s joined</string>
+    <string name="toast_user_left">%1$s left</string>
+    <string name="toast_trtc_error">TRTC error %1$d: %2$s</string>
+    <string name="toast_screen_share_started">Screen sharing started — switch to another app to share</string>
+    <string name="toast_screen_share_stopped">Screen sharing stopped (reason=%1$d)</string>
+    <string name="toast_sig_disconnected">Signaling disconnected: %1$s</string>
+    <string name="toast_accepted">%1$s accepted</string>
+    <string name="toast_declined">%1$s declined</string>
+    <string name="toast_hung_up">%1$s hung up</string>
+    <string name="toast_sig_error">Signaling error: %1$s</string>
+    <string name="toast_overlay_permission">Please grant "Display over other apps" permission for screen sharing</string>
+
+    <!-- Signaling errors -->
+    <string name="chat_connection_failed">Chat connection failed: %1$d %2$s</string>
+    <string name="chat_kicked">Kicked offline</string>
+    <string name="usersig_expired">UserSig expired</string>
+    <string name="chat_login_failed">Chat login failed: %1$d %2$s</string>
+    <string name="send_failed">Send failed: %1$d %2$s</string>
+
+    <!-- Screen share notification -->
+    <string name="notif_channel_name">Screen Share</string>
+    <string name="notif_channel_desc">TRTC screen share is running</string>
+    <string name="notif_title">Screen Sharing</string>
+    <string name="notif_text">TRTC is sharing your screen</string>
 </resources>

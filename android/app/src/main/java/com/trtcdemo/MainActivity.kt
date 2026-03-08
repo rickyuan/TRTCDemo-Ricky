@@ -8,8 +8,12 @@ import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.ContextCompat
+import androidx.core.os.LocaleListCompat
+import androidx.lifecycle.lifecycleScope
 import com.trtcdemo.databinding.ActivityMainBinding
+import kotlinx.coroutines.launch
 
 /**
  * Login screen.
@@ -38,7 +42,7 @@ class MainActivity : AppCompatActivity() {
         if (denied.isEmpty()) {
             startCallFlow()
         } else {
-            Toast.makeText(this, "需要摄像头和麦克风权限才能进行通话", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.permission_required), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -51,14 +55,15 @@ class MainActivity : AppCompatActivity() {
         binding.editUserId.setText(Config.DEFAULT_USER_ID)
 
         binding.btnStartCall.setOnClickListener { onStartCallClicked() }
+        binding.btnLanguage.setOnClickListener { toggleLanguage() }
     }
 
     private fun onStartCallClicked() {
         val userId   = binding.editUserId.text.toString().trim()
         val toUserId = binding.editToUserId.text.toString().trim()
 
-        if (userId.isEmpty()) { binding.editUserId.error = "请输入用户 ID"; return }
-        if (toUserId.isEmpty()) { binding.editToUserId.error = "请输入对方用户 ID"; return }
+        if (userId.isEmpty()) { binding.editUserId.error = getString(R.string.error_enter_user_id); return }
+        if (toUserId.isEmpty()) { binding.editToUserId.error = getString(R.string.error_enter_remote_id); return }
 
         val missing = requiredPermissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
@@ -76,25 +81,56 @@ class MainActivity : AppCompatActivity() {
 
         setLoading(true)
 
-        try {
-            val userSig = GenTestUserSig.genTestUserSig(
-                Config.SDK_APP_ID, Config.SECRET_KEY, userId
-            )
-            val roomId = (100000..999999).random()
+        lifecycleScope.launch {
+            try {
+                // Fetch UserSig from the backend server — no secrets in the client
+                val userSig = ServerApi.getUserSig(userId)
+                if (userSig == null) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        getString(R.string.error_usersig_failed),
+                        Toast.LENGTH_LONG
+                    ).show()
+                    return@launch
+                }
 
-            val intent = Intent(this, CallActivity::class.java).apply {
-                putExtra(CallActivity.EXTRA_USER_ID,    userId)
-                putExtra(CallActivity.EXTRA_TO_USER_ID, toUserId)
-                putExtra(CallActivity.EXTRA_USER_SIG,   userSig)
-                putExtra(CallActivity.EXTRA_SDK_APP_ID, Config.SDK_APP_ID)
-                putExtra(CallActivity.EXTRA_ROOM_ID,    roomId)
+                val roomId = (100000..999999).random()
+
+                val intent = Intent(this@MainActivity, CallActivity::class.java).apply {
+                    putExtra(CallActivity.EXTRA_USER_ID,    userId)
+                    putExtra(CallActivity.EXTRA_TO_USER_ID, toUserId)
+                    putExtra(CallActivity.EXTRA_USER_SIG,   userSig)
+                    putExtra(CallActivity.EXTRA_SDK_APP_ID, Config.SDK_APP_ID)
+                    putExtra(CallActivity.EXTRA_ROOM_ID,    roomId)
+                }
+                startActivity(intent)
+            } catch (e: Exception) {
+                Toast.makeText(
+                    this@MainActivity,
+                    getString(R.string.error_generic, e.message),
+                    Toast.LENGTH_LONG
+                ).show()
+            } finally {
+                setLoading(false)
             }
-            startActivity(intent)
-        } catch (e: Exception) {
-            Toast.makeText(this, "错误: ${e.message}", Toast.LENGTH_LONG).show()
-        } finally {
-            setLoading(false)
         }
+    }
+
+    /**
+     * Toggle between English and Chinese using AppCompatDelegate per-app locale.
+     * AppCompat 1.6+ persists the choice automatically.
+     */
+    private fun toggleLanguage() {
+        val currentLocales = AppCompatDelegate.getApplicationLocales()
+        val isZh = !currentLocales.isEmpty && currentLocales.toLanguageTags().startsWith("zh")
+        if (isZh) {
+            // Switch to English (system default)
+            AppCompatDelegate.setApplicationLocales(LocaleListCompat.getEmptyLocaleList())
+        } else {
+            // Switch to Chinese
+            AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("zh"))
+        }
+        // Activity is automatically recreated by AppCompat after locale change
     }
 
     private fun setLoading(loading: Boolean) {

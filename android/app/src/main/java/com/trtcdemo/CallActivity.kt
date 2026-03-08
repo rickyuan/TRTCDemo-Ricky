@@ -14,6 +14,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.trtcdemo.databinding.ActivityCallBinding
+import kotlinx.coroutines.launch
 
 /**
  * 1v1 Video Call screen (Android side).
@@ -27,6 +28,7 @@ import com.trtcdemo.databinding.ActivityCallBinding
  *  - Hang up
  *  - Call timer
  *  - Sends invite signal via Chat SDK C2C custom message
+ *  - Real-time bilingual subtitles via AI transcription bot
  *
  * Navigation:
  *   MainActivity -> (provides extras) -> CallActivity
@@ -39,16 +41,6 @@ class CallActivity : AppCompatActivity() {
         const val EXTRA_USER_SIG   = "userSig"
         const val EXTRA_SDK_APP_ID = "sdkAppId"
         const val EXTRA_ROOM_ID    = "roomId"
-
-        // UI Texts
-        private const val MIC_ON_TEXT = "静音"
-        private const val MIC_OFF_TEXT = "开麦"
-        private const val CAM_ON_TEXT = "关摄像头"
-        private const val CAM_OFF_TEXT = "开摄像头"
-        private const val CAM_SWITCH_FRONT_TEXT = "后置"
-        private const val CAM_SWITCH_REAR_TEXT = "前置"
-        private const val SCREEN_SHARE_ON_TEXT = "停止共享"
-        private const val SCREEN_SHARE_OFF_TEXT = "共享屏幕"
     }
 
     private lateinit var binding: ActivityCallBinding
@@ -67,6 +59,22 @@ class CallActivity : AppCompatActivity() {
     private var micMuted       = false
     private var screenShare    = false
     private var remoteUserId: String? = null
+    private var transcriptionTaskId: String? = null
+
+    // Dual-ready gate: invite is sent only after BOTH TRTC has entered the room
+    // AND the IM SDK has completed login. Without this gate, sendInvite() can be
+    // called before IM login finishes, causing the C2C message to fail silently.
+    private var trtcReady = false
+    private var imReady   = false
+    private var inviteSent = false
+
+    private fun maybeSendInvite() {
+        if (trtcReady && imReady && !inviteSent) {
+            inviteSent = true
+            toUserId?.let { signaling.sendInvite(roomId, it) }
+        }
+    }
+
     private var callSeconds = 0
     private val timerHandler = Handler(Looper.getMainLooper())
     private val timerRunnable = object : Runnable {
@@ -77,6 +85,10 @@ class CallActivity : AppCompatActivity() {
             binding.tvTimer.text = "$m:$s"
             timerHandler.postDelayed(this, 1000)
         }
+    }
+
+    private val subtitleHideRunnable = Runnable {
+        binding.subtitleOverlay.visibility = View.GONE
     }
 
     // ── Lifecycle ──────────────────────────────────────────────────────────────
@@ -92,7 +104,7 @@ class CallActivity : AppCompatActivity() {
         roomId    = intent.getIntExtra(EXTRA_ROOM_ID, 0)
         toUserId  = intent.getStringExtra(EXTRA_TO_USER_ID)
 
-        binding.tvRoomId.text = "房间: $roomId"
+        binding.tvRoomId.text = getString(R.string.room_label, roomId)
         binding.tvUserId.text  = userId
 
         setupResolutionSpinner()
@@ -103,6 +115,7 @@ class CallActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         timerHandler.removeCallbacks(timerRunnable)
+        timerHandler.removeCallbacks(subtitleHideRunnable)
         trtcMgr.destroy()
         signaling.disconnect()
         super.onDestroy()
@@ -130,18 +143,18 @@ class CallActivity : AppCompatActivity() {
         binding.btnToggleMic.setOnClickListener {
             micMuted = !micMuted
             trtcMgr.setMicMuted(micMuted)
-            binding.btnToggleMic.text = if (micMuted) MIC_OFF_TEXT else MIC_ON_TEXT
+            binding.btnToggleMic.text = getString(if (micMuted) R.string.btn_unmute else R.string.btn_mute)
             binding.btnToggleMic.alpha = if (micMuted) 0.5f else 1.0f
         }
 
         binding.btnToggleCam.setOnClickListener {
             if (trtcMgr.isCameraOn) {
                 trtcMgr.stopCamera()
-                binding.btnToggleCam.text = CAM_OFF_TEXT
+                binding.btnToggleCam.text = getString(R.string.btn_cam_on)
                 binding.btnToggleCam.alpha = 0.5f
             } else {
                 trtcMgr.startCamera(binding.viewLocalVideo, frontCamera)
-                binding.btnToggleCam.text = CAM_ON_TEXT
+                binding.btnToggleCam.text = getString(R.string.btn_cam_off)
                 binding.btnToggleCam.alpha = 1.0f
             }
         }
@@ -149,7 +162,7 @@ class CallActivity : AppCompatActivity() {
         binding.btnSwitchCam.setOnClickListener {
             frontCamera = !frontCamera
             trtcMgr.switchCamera()
-            binding.btnSwitchCam.text = if (frontCamera) CAM_SWITCH_FRONT_TEXT else CAM_SWITCH_REAR_TEXT
+            binding.btnSwitchCam.text = getString(if (frontCamera) R.string.btn_switch_rear else R.string.btn_switch_front)
         }
 
         binding.btnScreenShare.setOnClickListener { toggleScreenShare() }
@@ -161,12 +174,13 @@ class CallActivity : AppCompatActivity() {
         trtcMgr.listener = object : TRTCManager.Listener {
             override fun onEnterRoom(result: Int) {
                 if (result > 0) {
-                    showToast("已进入房间 $roomId")
+                    showToast(getString(R.string.toast_entered_room, roomId))
                     timerHandler.post(timerRunnable)
-                    // Once we're in the room, invite the target user (if any)
-                    toUserId?.let { signaling.sendInvite(roomId, it) }
+                    trtcReady = true
+                    maybeSendInvite()
+                    startTranscription()
                 } else {
-                    showError("进入房间失败，错误码: $result")
+                    showError(getString(R.string.toast_failed_enter_room, result))
                 }
             }
 
@@ -175,15 +189,23 @@ class CallActivity : AppCompatActivity() {
             }
 
             override fun onRemoteUserEnter(uid: String) {
-                remoteUserId = uid
-                showToast("$uid 已加入")
-                binding.tvCallStatus.text = "通话中"
+                // Ignore the AI transcription bot; track only the real call partner
+                if (!uid.startsWith("trtc_bot_")) {
+                    remoteUserId = uid
+                    showToast(getString(R.string.toast_user_joined, uid))
+                    binding.tvCallStatus.text = getString(R.string.status_in_call)
+                }
             }
 
             override fun onRemoteUserLeave(uid: String, reason: Int) {
-                remoteUserId = null
-                showToast("$uid 已离开")
-                hangup()
+                // Only hang up when the actual call partner leaves, not the AI bot.
+                // Previously any user leaving (including the transcription bot) would
+                // trigger hangup(), ending the call prematurely.
+                if (uid == remoteUserId) {
+                    remoteUserId = null
+                    showToast(getString(R.string.toast_user_left, uid))
+                    hangup()
+                }
             }
 
             override fun onRemoteVideoAvailable(uid: String, streamType: Int, available: Boolean) {
@@ -199,24 +221,30 @@ class CallActivity : AppCompatActivity() {
             }
 
             override fun onError(errCode: Int, errMsg: String) {
-                showToast("TRTC 错误 $errCode: $errMsg")
+                showToast(getString(R.string.toast_trtc_error, errCode, errMsg))
             }
 
             override fun onScreenCaptureStarted() {
-                showToast("屏幕共享已开始 — 切换到其他应用以共享内容")
-                binding.tvCallStatus.text = "屏幕共享中"
+                showToast(getString(R.string.toast_screen_share_started))
+                binding.tvCallStatus.text = getString(R.string.status_screen_sharing)
             }
 
             override fun onScreenCaptureStopped(reason: Int) {
-                showToast("屏幕共享已停止 (reason=$reason)")
-                binding.tvCallStatus.text = if (remoteUserId != null) "通话中" else "已连接"
+                showToast(getString(R.string.toast_screen_share_stopped, reason))
+                binding.tvCallStatus.text = getString(
+                    if (remoteUserId != null) R.string.status_in_call else R.string.status_connected
+                )
                 if (screenShare) {
                     screenShare = false
-                    binding.btnScreenShare.text = SCREEN_SHARE_OFF_TEXT
+                    binding.btnScreenShare.text = getString(R.string.btn_share_screen)
                     binding.btnScreenShare.alpha = 1.0f
                     ScreenShareService.stop(this@CallActivity)
                     applyNormalLayout()
                 }
+            }
+
+            override fun onTranscriptionMessage(userId: String, text: String, translations: Map<String, String>, isFinal: Boolean) {
+                showSubtitle(text, translations, isFinal)
             }
         }
 
@@ -233,30 +261,35 @@ class CallActivity : AppCompatActivity() {
     private fun initSignaling() {
         val signalingListener = object : SignalingClient.Listener {
             override fun onConnected() {
-                binding.tvCallStatus.text = "已连接，等待对方接听..."
+                binding.tvCallStatus.text = getString(R.string.status_waiting_answer)
+                imReady = true
+                maybeSendInvite()
             }
 
             override fun onDisconnected(reason: String) {
-                showToast("信令断开: $reason")
+                showToast(getString(R.string.toast_sig_disconnected, reason))
             }
 
             override fun onAccepted(roomId: Int, fromUserId: String) {
-                showToast("$fromUserId 已接听")
-                binding.tvCallStatus.text = "通话中"
+                if (roomId != this@CallActivity.roomId) return // stale offline message
+                showToast(getString(R.string.toast_accepted, fromUserId))
+                binding.tvCallStatus.text = getString(R.string.status_in_call)
             }
 
             override fun onDeclined(roomId: Int, fromUserId: String) {
-                showToast("$fromUserId 已拒绝")
+                if (roomId != this@CallActivity.roomId) return // stale offline message
+                showToast(getString(R.string.toast_declined, fromUserId))
                 hangup()
             }
 
             override fun onHangup(roomId: Int, fromUserId: String) {
-                showToast("$fromUserId 已挂断")
+                if (roomId != this@CallActivity.roomId) return // stale offline message
+                showToast(getString(R.string.toast_hung_up, fromUserId))
                 hangup()
             }
 
             override fun onError(message: String) {
-                showToast("信令错误: $message")
+                showToast(getString(R.string.toast_sig_error, message))
             }
         }
 
@@ -277,12 +310,12 @@ class CallActivity : AppCompatActivity() {
             trtcMgr.stopScreenCapture()
             ScreenShareService.stop(this)
             screenShare = false
-            binding.btnScreenShare.text = SCREEN_SHARE_OFF_TEXT
+            binding.btnScreenShare.text = getString(R.string.btn_share_screen)
             binding.btnScreenShare.alpha = 1.0f
             applyNormalLayout()
         } else {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
-                showToast("请授予\"显示在其他应用上方\"权限以开启屏幕共享")
+                showToast(getString(R.string.toast_overlay_permission))
                 startActivity(
                     Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                         Uri.parse("package:$packageName"))
@@ -292,7 +325,7 @@ class CallActivity : AppCompatActivity() {
             ScreenShareService.start(this)
             trtcMgr.startScreenCapture()
             screenShare = true
-            binding.btnScreenShare.text = SCREEN_SHARE_ON_TEXT
+            binding.btnScreenShare.text = getString(R.string.btn_stop_share)
             binding.btnScreenShare.alpha = 0.6f
             applyScreenShareLayout()
         }
@@ -306,12 +339,69 @@ class CallActivity : AppCompatActivity() {
         // No view changes needed
     }
 
+    // ── Transcription ──────────────────────────────────────────────────────────
+    private fun startTranscription() {
+        val botUserId = "trtc_bot_$roomId"
+        lifecycleScope.launch {
+            // Delegate to the backend server — no secrets needed on the client
+            val taskId = ServerApi.startAITranscription(
+                roomId    = roomId,
+                botUserId = botUserId,
+            )
+            transcriptionTaskId = taskId
+            if (taskId != null) {
+                showToast("Transcription started (${taskId.takeLast(6)})")
+            } else {
+                showToast("Transcription start failed — check server logs")
+            }
+        }
+    }
+
+    private fun stopTranscription() {
+        val taskId = transcriptionTaskId ?: return
+        transcriptionTaskId = null
+        lifecycleScope.launch {
+            ServerApi.stopAITranscription(taskId)
+        }
+    }
+
+    private fun showSubtitle(text: String, translations: Map<String, String>, isFinal: Boolean) {
+        if (text.isEmpty()) return
+        timerHandler.removeCallbacks(subtitleHideRunnable)
+
+        binding.subtitleOverlay.visibility = View.VISIBLE
+        // Interim results are dimmed; final results are fully opaque
+        binding.subtitleOverlay.alpha = if (isFinal) 1.0f else 0.65f
+
+        binding.tvSubtitleOriginal.text = text
+
+        val en = translations["en"]
+        if (en.isNullOrEmpty()) {
+            binding.tvSubtitleTranslation.visibility = View.GONE
+        } else {
+            binding.tvSubtitleTranslation.text = en
+            binding.tvSubtitleTranslation.visibility = View.VISIBLE
+        }
+
+        val id = translations["id"]
+        if (id.isNullOrEmpty()) {
+            binding.tvSubtitleTranslationId.visibility = View.GONE
+        } else {
+            binding.tvSubtitleTranslationId.text = id
+            binding.tvSubtitleTranslationId.visibility = View.VISIBLE
+        }
+
+        if (isFinal) {
+            // Auto-hide 5 seconds after the final result arrives
+            timerHandler.postDelayed(subtitleHideRunnable, 5000)
+        }
+    }
+
     // ── Hangup ─────────────────────────────────────────────────────────────────
     private fun hangup() {
         timerHandler.removeCallbacks(timerRunnable)
-        // Hangup can be initiated by either user. We need to signal the other party.
-        // 'remoteUserId' is set when another user joins the room.
-        // 'toUserId' is the initial user we invited.
+        timerHandler.removeCallbacks(subtitleHideRunnable)
+        stopTranscription()
         val target = remoteUserId ?: toUserId
         if (target != null) {
             signaling.sendHangup(roomId, target)

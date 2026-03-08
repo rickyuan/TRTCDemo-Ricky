@@ -7,6 +7,7 @@ import com.tencent.rtmp.ui.TXCloudVideoView
 import com.tencent.trtc.TRTCCloud
 import com.tencent.trtc.TRTCCloudDef
 import com.tencent.trtc.TRTCCloudListener
+import org.json.JSONObject
 
 /**
  * Wraps TRTCCloud lifecycle: entering/leaving rooms, camera/screen-share toggling,
@@ -90,8 +91,11 @@ class TRTCManager(private val context: Context) {
     fun exitRoom() {
         if (isScreenSharing) stopScreenCapture()
         if (isCameraOn)      stopCamera()
+        trtcCloud.stopLocalAudio()
         trtcCloud.exitRoom()
         isInRoom = false
+        subtitleRounds.clear()
+        lastTranscriptionText = ""
     }
 
     /** Release all SDK resources — call this in Activity.onDestroy(). */
@@ -198,6 +202,26 @@ class TRTCManager(private val context: Context) {
     // ── Helpers ────────────────────────────────────────────────────────────────
     private var pendingLocalView: TXCloudVideoView? = null
 
+    /** Per-round subtitle state. Accumulates transcription + all translation results. */
+    private inner class SubtitleRound {
+        var text: String = ""
+        val translations: MutableMap<String, String> = mutableMapOf()
+        // Count of translation-final messages received so we know when all targets have arrived.
+        var finalTranslationCount: Int = 0
+    }
+    private val subtitleRounds = HashMap<String, SubtitleRound>()
+
+    /**
+     * Most recently received transcription text (across all rounds).
+     * Per TRTC docs, transcription messages have NO roundid, while translation messages DO.
+     * This fallback lets translation messages display with the current transcription text
+     * even when their roundId doesn't match the transcription's empty-string roundId.
+     */
+    private var lastTranscriptionText: String = ""
+
+    /** Number of translation target languages configured (en + zh). */
+    private val TRANSLATION_TARGET_COUNT = 2
+
     private fun buildEncParam(key: String): TRTCCloudDef.TRTCVideoEncParam {
         val resolution = RESOLUTIONS[key] ?: TRTCCloudDef.TRTC_VIDEO_RESOLUTION_960_540
         return TRTCCloudDef.TRTCVideoEncParam().apply {
@@ -224,6 +248,15 @@ class TRTCManager(private val context: Context) {
         fun onError(errCode: Int, errMsg: String)
         fun onScreenCaptureStarted() {}
         fun onScreenCaptureStopped(reason: Int) {}
+        /**
+         * Called when the AI transcription bot delivers a speech segment.
+         *
+         * @param userId       Speaker's userId.
+         * @param text         Transcribed text (source language).
+         * @param translations Map of language-code → translated text, e.g. {"en":"Hello","id":"Halo"}.
+         * @param isFinal      True = final result for this phrase; false = interim/streaming.
+         */
+        fun onTranscriptionMessage(userId: String, text: String, translations: Map<String, String>, isFinal: Boolean) {}
     }
 
     // ── Internal TRTC callbacks ────────────────────────────────────────────────
@@ -233,6 +266,8 @@ class TRTCManager(private val context: Context) {
             Log.d(TAG, "onEnterRoom: result=$result")
             if (result > 0) {
                 isInRoom = true
+                // Start audio capture — must be called explicitly in SDK v12+
+                trtcCloud.startLocalAudio(TRTCCloudDef.TRTC_AUDIO_QUALITY_SPEECH)
                 // Start camera once we're in the room
                 pendingLocalView?.let { startCamera(it) }
                 pendingLocalView = null
@@ -281,6 +316,67 @@ class TRTCManager(private val context: Context) {
             Log.d(TAG, "onScreenCaptureStopped: reason=$reason")
             isScreenSharing = false
             listener?.onScreenCaptureStopped(reason)
+        }
+
+        /**
+         * Receives AI transcription messages from the bot (cmdID == 1).
+         *
+         * Each utterance (roundId) produces several messages in order:
+         *   1. Transcription message(s): payload has "text" field
+         *   2. Per-target translation message(s): payload has "translation_text" +
+         *      "translation_language" (e.g. "en" or "id")
+         *
+         * We accumulate all results in SubtitleRound and fire the callback after
+         * each update so the UI refreshes progressively. The round is removed only
+         * after all TRANSLATION_TARGET_COUNT translation-final messages have arrived.
+         */
+        override fun onRecvCustomCmdMsg(userId: String, cmdID: Int, seq: Int, message: ByteArray) {
+            // Do NOT filter by cmdID — docs don't guarantee translations use cmdID=1
+            val rawStr = String(message, Charsets.UTF_8)
+            Log.d(TAG, "custom msg cmdID=$cmdID: $rawStr")
+            try {
+                val json = JSONObject(rawStr)
+                val msgType = json.optInt("type")
+                // 10000 = ASR transcription, 10001 = translation
+                if (msgType != 10000 && msgType != 10001) return
+                val payload = json.optJSONObject("payload") ?: return
+
+                val roundId = payload.optString("roundid", "")
+                val isFinal = payload.optBoolean("end", false)
+                val round   = subtitleRounds.getOrPut(roundId) { SubtitleRound() }
+
+                if (payload.has("translation_text")) {
+                    // Translation message — store by language code ("en", "id", …)
+                    val lang      = payload.optString("translation_language", "")
+                    val transText = payload.optString("translation_text", "")
+                    if (lang.isNotEmpty()) round.translations[lang] = transText
+
+                    if (isFinal) {
+                        round.finalTranslationCount++
+                        // Remove round only after all expected translation finals have arrived.
+                        if (round.finalTranslationCount >= TRANSLATION_TARGET_COUNT) {
+                            subtitleRounds.remove(roundId)
+                        }
+                    }
+                    // Transcription messages have no roundid, so round.text may be empty.
+                    // Fall back to the most recently received transcription text.
+                    val textToShow = round.text.ifEmpty { lastTranscriptionText }
+                    if (textToShow.isNotEmpty()) {
+                        Log.d(TAG, "subtitle/trans isFinal=$isFinal text=$textToShow lang=$lang trans=$transText")
+                        listener?.onTranscriptionMessage(userId, textToShow, round.translations.toMap(), isFinal)
+                    }
+                } else {
+                    // Transcription message
+                    round.text = payload.optString("text", "")
+                    if (round.text.isNotEmpty()) lastTranscriptionText = round.text
+                    if (round.text.isNotEmpty()) {
+                        Log.d(TAG, "subtitle/orig isFinal=$isFinal text=${round.text}")
+                        listener?.onTranscriptionMessage(userId, round.text, round.translations.toMap(), isFinal)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "onRecvCustomCmdMsg parse error: $e")
+            }
         }
 
     }

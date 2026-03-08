@@ -1,109 +1,129 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#0F1117"
-    android:fillViewport="true">
+    android:background="#0F1117">
 
-    <LinearLayout
+    <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:gravity="center"
-        android:padding="32dp">
+        android:layout_height="match_parent"
+        android:fillViewport="true">
 
-        <!-- Title -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="TRTC 视频通话"
-            android:textColor="#E8EAF0"
-            android:textSize="26sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="6dp" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Android 端"
-            android:textColor="#8A8FA8"
-            android:textSize="14sp"
-            android:layout_marginBottom="40dp" />
-
-        <!-- Card -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:background="@drawable/bg_card"
-            android:padding="24dp">
+            android:gravity="center"
+            android:padding="32dp"
+            android:paddingTop="64dp">
 
-            <!-- User ID -->
+            <!-- Title -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="用户 ID"
-                android:textColor="#8A8FA8"
-                android:textSize="12sp"
-                android:layout_marginBottom="6dp" />
-
-            <EditText
-                android:id="@+id/editUserId"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:background="@drawable/bg_input"
-                android:paddingHorizontal="14dp"
+                android:text="@string/title_main"
                 android:textColor="#E8EAF0"
-                android:textColorHint="#555A72"
-                android:hint="例如: android_user_001"
-                android:singleLine="true"
-                android:inputType="text"
-                android:layout_marginBottom="20dp" />
-
-            <!-- To User ID -->
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="对方用户 ID"
-                android:textColor="#8A8FA8"
-                android:textSize="12sp"
-                android:layout_marginBottom="6dp" />
-
-            <EditText
-                android:id="@+id/editToUserId"
-                android:layout_width="match_parent"
-                android:layout_height="48dp"
-                android:background="@drawable/bg_input"
-                android:paddingHorizontal="14dp"
-                android:textColor="#E8EAF0"
-                android:textColorHint="#555A72"
-                android:hint="例如: web_user_001"
-                android:singleLine="true"
-                android:inputType="text"
-                android:layout_marginBottom="20dp" />
-
-            <!-- Start Call Button -->
-            <Button
-                android:id="@+id/btnStartCall"
-                android:layout_width="match_parent"
-                android:layout_height="52dp"
-                android:text="发起视频通话"
-                android:textSize="16sp"
+                android:textSize="26sp"
                 android:textStyle="bold"
-                android:backgroundTint="#006DFF"
-                android:textColor="#FFFFFF"
-                android:stateListAnimator="@null" />
+                android:layout_marginBottom="6dp" />
 
-            <!-- Progress -->
-            <ProgressBar
-                android:id="@+id/progressBar"
+            <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_gravity="center"
-                android:layout_marginTop="16dp"
-                android:visibility="gone" />
+                android:text="@string/subtitle_main"
+                android:textColor="#8A8FA8"
+                android:textSize="14sp"
+                android:layout_marginBottom="40dp" />
 
+            <!-- Card -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_card"
+                android:padding="24dp">
+
+                <!-- User ID -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_user_id"
+                    android:textColor="#8A8FA8"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="6dp" />
+
+                <EditText
+                    android:id="@+id/editUserId"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:background="@drawable/bg_input"
+                    android:paddingHorizontal="14dp"
+                    android:textColor="#E8EAF0"
+                    android:textColorHint="#555A72"
+                    android:hint="@string/hint_user_id"
+                    android:singleLine="true"
+                    android:inputType="text"
+                    android:layout_marginBottom="20dp" />
+
+                <!-- To User ID -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_remote_id"
+                    android:textColor="#8A8FA8"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="6dp" />
+
+                <EditText
+                    android:id="@+id/editToUserId"
+                    android:layout_width="match_parent"
+                    android:layout_height="48dp"
+                    android:background="@drawable/bg_input"
+                    android:paddingHorizontal="14dp"
+                    android:textColor="#E8EAF0"
+                    android:textColorHint="#555A72"
+                    android:hint="@string/hint_remote_id"
+                    android:singleLine="true"
+                    android:inputType="text"
+                    android:layout_marginBottom="20dp" />
+
+                <!-- Start Call Button -->
+                <Button
+                    android:id="@+id/btnStartCall"
+                    android:layout_width="match_parent"
+                    android:layout_height="52dp"
+                    android:text="@string/btn_start_call"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:backgroundTint="#006DFF"
+                    android:textColor="#FFFFFF"
+                    android:stateListAnimator="@null" />
+
+                <!-- Progress -->
+                <ProgressBar
+                    android:id="@+id/progressBar"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center"
+                    android:layout_marginTop="16dp"
+                    android:visibility="gone" />
+
+            </LinearLayout>
         </LinearLayout>
-    </LinearLayout>
-</ScrollView>
+    </ScrollView>
+
+    <!-- Language toggle button (top-right overlay) -->
+    <Button
+        android:id="@+id/btnLanguage"
+        android:layout_width="wrap_content"
+        android:layout_height="36dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="12dp"
+        android:text="@string/btn_language"
+        android:textSize="13sp"
+        android:textColor="#E8EAF0"
+        android:backgroundTint="#252836"
+        android:paddingHorizontal="14dp"
+        android:stateListAnimator="@null" />
+
+</FrameLayout>

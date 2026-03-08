@@ -98,17 +98,17 @@ class SignalingClient(
             override fun onConnectFailed(code: Int, error: String?) {
                 Log.e(TAG, "Chat SDK connect failed: $code $error")
                 scope.launch(Dispatchers.Main) {
-                    listener.onError("Chat 连接失败: $code $error")
+                    listener.onError(context.getString(R.string.chat_connection_failed, code, error ?: ""))
                 }
             }
             override fun onKickedOffline() {
                 scope.launch(Dispatchers.Main) {
-                    listener.onDisconnected("被踢下线")
+                    listener.onDisconnected(context.getString(R.string.chat_kicked))
                 }
             }
             override fun onUserSigExpired() {
                 scope.launch(Dispatchers.Main) {
-                    listener.onError("UserSig 已过期")
+                    listener.onError(context.getString(R.string.usersig_expired))
                 }
             }
         })
@@ -127,7 +127,7 @@ class SignalingClient(
             override fun onError(code: Int, desc: String?) {
                 Log.e(TAG, "Chat login failed: $code $desc")
                 scope.launch(Dispatchers.Main) {
-                    listener.onError("Chat 登录失败: $code $desc")
+                    listener.onError(context.getString(R.string.chat_login_failed, code, desc ?: ""))
                 }
             }
         })
@@ -170,7 +170,7 @@ class SignalingClient(
                 override fun onError(code: Int, desc: String?) {
                     Log.e(TAG, "Send failed to $toUserId: $code $desc")
                     scope.launch(Dispatchers.Main) {
-                        listener.onError("发送失败: $code $desc")
+                        listener.onError(context.getString(R.string.send_failed, code, desc ?: ""))
                     }
                 }
             }

@@ -69,10 +69,10 @@ class ScreenShareService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "屏幕共享",
+                getString(R.string.notif_channel_name),
                 NotificationManager.IMPORTANCE_LOW,
             ).apply {
-                description = "TRTC 屏幕共享正在运行"
+                description = getString(R.string.notif_channel_desc)
                 setShowBadge(false)
             }
             getSystemService(NotificationManager::class.java)
@@ -82,8 +82,8 @@ class ScreenShareService : Service() {
 
     private fun buildNotification(): Notification =
         NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("屏幕共享中")
-            .setContentText("TRTC 正在共享您的屏幕")
+            .setContentTitle(getString(R.string.notif_title))
+            .setContentText(getString(R.string.notif_text))
             .setSmallIcon(android.R.drawable.ic_menu_share)
             .setOngoing(true)
             .setSilent(true)
